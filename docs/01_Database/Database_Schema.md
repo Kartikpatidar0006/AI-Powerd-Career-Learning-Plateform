@@ -620,3 +620,299 @@ Logout
 - Password Reset
 - Email Verification
 - Secure Password Hashing
+
+
+# Module 2 - Student Management
+
+## Overview
+
+The Student Management module stores all student-related information, including their selected profession, skill set, profile details, and learning progress.
+
+This module enables the platform to personalize tasks, AI feedback, mock interviews, and learning roadmaps based on each student's career path.
+
+---
+
+## Objectives
+
+- Store student profile information
+- Allow profession selection
+- Track student skills
+- Map required skills for each profession
+- Support personalized recommendations
+
+---
+
+## Tables Included
+
+1. professions
+2. student_profiles
+3. skills
+4. profession_skills
+5. student_skills
+
+
+# Table 6 - Professions
+
+## Purpose
+
+Stores all available career paths offered on the platform.
+
+Examples:
+- AI/ML Engineer
+- Data Scientist
+- Full Stack Developer
+- Backend Developer
+- Frontend Developer
+- DevOps Engineer
+- Cybersecurity Analyst
+
+---
+
+## Columns
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | UUID | Primary Key |
+| name | VARCHAR(100) | Profession Name |
+| description | TEXT | Profession Description |
+| icon | TEXT | Icon URL |
+| created_at | TIMESTAMP | Created Time |
+| updated_at | TIMESTAMP | Updated Time |
+
+---
+
+## Relationships
+
+One Profession
+
+↓
+
+Many Student Profiles
+
+↓
+
+Many Tasks
+
+↓
+
+Many Learning Paths
+
+
+# Table 7 - Student Profiles
+
+## Purpose
+
+Stores additional information about students that is not directly related to authentication.
+
+---
+
+## Columns
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | UUID | Primary Key |
+| user_id | UUID | FK → users |
+| profession_id | UUID | FK → professions |
+| college | VARCHAR(150) | College Name |
+| degree | VARCHAR(100) | Degree |
+| semester | INTEGER | Current Semester |
+| bio | TEXT | Short Bio |
+| github_url | TEXT | GitHub Profile |
+| linkedin_url | TEXT | LinkedIn Profile |
+| portfolio_url | TEXT | Portfolio Website |
+| resume_url | TEXT | AWS S3 Resume |
+| created_at | TIMESTAMP | Created Time |
+| updated_at | TIMESTAMP | Updated Time |
+
+
+
+# Table 8 - Skills
+
+## Purpose
+
+The Skills table contains all technical and soft skills available on the platform.
+
+These skills are linked with professions, tasks, learning paths, and student progress.
+
+Examples:
+
+- Python
+- Java
+- SQL
+- React
+- FastAPI
+- Docker
+- Machine Learning
+- Deep Learning
+- Communication
+- Problem Solving
+
+---
+
+## Columns
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | UUID | Primary Key |
+| name | VARCHAR(100) | Skill Name |
+| category | VARCHAR(100) | Programming, AI, Cloud, Soft Skill |
+| description | TEXT | Skill Description |
+| icon | TEXT | Skill Icon |
+| created_at | TIMESTAMP | Created Time |
+| updated_at | TIMESTAMP | Updated Time |
+
+---
+
+## Relationships
+
+One Skill
+
+↓
+
+Many Profession Skills
+
+↓
+
+Many Student Skills
+
+↓
+
+Many Tasks
+
+---
+
+## Constraints
+
+- Skill name must be unique.
+- Category cannot be empty.
+
+
+# Table 9 - Profession Skills
+
+## Purpose
+
+This table defines which skills are required for a profession.
+
+Example
+
+AI Engineer
+
+↓
+
+Python
+
+Machine Learning
+
+Deep Learning
+
+FastAPI
+
+Docker
+
+---
+
+## Columns
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | UUID | Primary Key |
+| profession_id | UUID | FK → professions |
+| skill_id | UUID | FK → skills |
+| required_level | VARCHAR(30) | Beginner / Intermediate / Advanced |
+| priority | INTEGER | Learning Priority |
+| created_at | TIMESTAMP | Created Time |
+
+---
+
+## Relationships
+
+Many Professions
+
+↔
+
+Many Skills
+
+(Many-to-Many)
+
+---
+
+## Constraints
+
+A profession cannot have duplicate skills.
+
+
+# Table 10 - Student Skills
+
+## Purpose
+
+Tracks the current skill level and progress of every student.
+
+This table powers the AI recommendation engine.
+
+---
+
+## Columns
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | UUID | Primary Key |
+| student_profile_id | UUID | FK → student_profiles |
+| skill_id | UUID | FK → skills |
+| level | VARCHAR(30) | Beginner / Intermediate / Advanced |
+| progress | INTEGER | 0–100 |
+| last_practiced | TIMESTAMP | Last Practice Date |
+| created_at | TIMESTAMP | Created Time |
+| updated_at | TIMESTAMP | Updated Time |
+
+---
+
+## Relationships
+
+One Student
+
+↓
+
+Many Student Skills
+
+One Skill
+
+↓
+
+Many Student Skills
+
+---
+
+## Constraints
+
+Progress value should always be between 0 and 100.
+
+
+# Module 2 Summary
+
+## Tables
+
+- professions
+- student_profiles
+- skills
+- profession_skills
+- student_skills
+
+---
+
+## Features
+
+- Profession Selection
+- Skill Tracking
+- Skill Progress
+- AI Personalization
+- Career Mapping
+- Learning Recommendations
+
+---
+
+## Future Scope
+
+- Skill Assessments
+- AI Skill Gap Analysis
+- Personalized Learning Paths
+- Company-specific Skill Mapping
