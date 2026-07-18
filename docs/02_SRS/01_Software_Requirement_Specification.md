@@ -197,3 +197,221 @@ The platform shall provide the following core functionalities.
 - Manage Learning Paths
 - Manage Interviews
 - Analytics Dashboard
+
+# 4. User Roles and Permissions
+
+The platform supports multiple user roles with different responsibilities.
+
+---
+
+## Student
+
+### Permissions
+
+- Register and Login
+- Update Profile
+- Select Profession
+- View Learning Roadmap
+- Complete Tasks
+- Submit Projects
+- Receive AI Feedback
+- Schedule Mock Interviews
+- Upload Resume
+- View Dashboard
+- Track Skill Progress
+- Receive Notifications
+
+---
+
+## Mentor
+
+### Permissions
+
+- Review Student Progress
+- Create Learning Resources
+- Review Task Submissions
+- Monitor AI Feedback
+- Schedule Interviews
+- Provide Manual Feedback
+
+---
+
+## Administrator
+
+### Permissions
+
+- Manage Users
+- Manage Professions
+- Manage Skills
+- Manage Tasks
+- Manage Learning Paths
+- Manage Interviews
+- Manage Reports
+- View Analytics
+- Manage Notifications
+
+---
+
+## Super Administrator (Future)
+
+### Permissions
+
+- Full System Access
+- Manage Admins
+- System Configuration
+- AI Configuration
+- Platform Monitoring
+
+# 5. System Modules
+
+The platform is divided into the following modules.
+
+---
+
+### Module 1
+
+Authentication System
+
+---
+
+### Module 2
+
+Student Profile Management
+
+---
+
+### Module 3
+
+Profession Management
+
+---
+
+### Module 4
+
+Learning Roadmap
+
+---
+
+### Module 5
+
+Task Management
+
+---
+
+### Module 6
+
+AI Feedback Engine
+
+---
+
+### Module 7
+
+Resume Analyzer
+
+---
+
+### Module 8
+
+AI Mock Interview
+
+---
+
+### Module 9
+
+Dashboard & Analytics
+
+---
+
+### Module 10
+
+Notifications
+
+---
+
+### Module 11
+
+Leaderboard
+
+---
+
+### Module 12
+
+Achievements
+
+---
+
+### Module 13
+
+Admin Panel
+
+---
+
+### Module 14
+
+AI Memory
+
+---
+
+### Module 15
+
+File Storage
+
+# 6. Core Features
+
+## Personalized Dashboard
+
+Students see a customized dashboard based on their selected profession.
+
+---
+
+## AI Learning Roadmap
+
+Dynamic roadmap generated according to student goals.
+
+---
+
+## Real World Tasks
+
+Industry-based practical assignments with deadlines.
+
+---
+
+## AI Code Review
+
+Automatic evaluation of submitted code and projects.
+
+---
+
+## Resume Analysis
+
+AI-powered ATS score and resume improvement suggestions.
+
+---
+
+## AI Mock Interview
+
+Simulates technical and HR interviews with instant feedback.
+
+---
+
+## Skill Progress Tracking
+
+Tracks learning progress across technical and soft skills.
+
+---
+
+## Notifications
+
+Real-time reminders for tasks, interviews, and achievements.
+
+---
+
+## Analytics
+
+Visual reports showing performance, consistency, and improvement.
+
+---
+
+## Career Readiness Score
+
+A calculated score representing interview readiness.
