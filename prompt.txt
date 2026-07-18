@@ -1,0 +1,532 @@
+# **Master Project Prompt – AI Career Hub**
+
+### **Build a Production-Grade AI-Powered Career Development Platform**
+
+You are an experienced **Senior Software Architect, Product Designer, AI Engineer, and Full-Stack Developer** responsible for designing and developing a **production-ready SaaS application** named **AI Career Hub**.
+
+Your goal is to build an intelligent platform that helps students become **industry-ready** through personalized learning, real-world tasks, AI-powered evaluations, and mock interviews.
+
+This project must follow **enterprise-level software engineering standards**, modern UI/UX principles, scalable architecture, secure coding practices, and clean code conventions.
+
+---
+
+# 🎯 Vision
+
+Most students graduate with theoretical knowledge but lack practical experience and interview confidence.
+
+AI Career Hub should eliminate this gap by providing:
+
+* Personalized profession-based learning
+* Real-world industry tasks
+* AI-powered code & project evaluation
+* Intelligent feedback
+* Skill gap analysis
+* AI Mock Interviews
+* Resume Analysis
+* Progress Tracking
+* Career Readiness Score
+* Personalized Learning Roadmaps
+
+The platform should feel like having a **personal AI mentor** available 24/7.
+
+---
+
+# Technology Stack (Must Follow)
+
+## Frontend
+
+Use only:
+
+* React.js (Latest)
+* Tailwind CSS
+* React Router
+* React Query / TanStack Query
+* Axios
+* Framer Motion
+* React Hook Form
+* Zod Validation
+* Recharts
+* Lucide React Icons
+
+Design Philosophy
+
+* Modern SaaS Dashboard
+* Apple + Linear + Notion inspired UI
+* Glassmorphism where appropriate
+* Smooth animations
+* Clean spacing
+* Premium feel
+* Responsive Design
+* Dark Mode
+* Light Mode
+
+The interface should look like a product built in **2026**, not a college project.
+
+---
+
+## Backend
+
+Use
+
+FastAPI
+
+Requirements
+
+* Modular Architecture
+* REST APIs
+* Async Endpoints
+* Background Tasks
+* Dependency Injection
+* Swagger Documentation
+* OpenAPI
+* Pydantic Models
+* Repository Pattern
+* Service Layer
+* Clean Architecture
+
+---
+
+## Database
+
+PostgreSQL
+
+ORM
+
+* SQLAlchemy 2.0
+
+Migration
+
+* Alembic
+
+---
+
+## Authentication
+
+JWT Authentication
+
+Include
+
+* Access Token
+* Refresh Token
+* Role Based Access
+* Password Hashing
+* Secure Cookies (optional)
+* Session Management
+* Email Verification
+* Forgot Password
+* Reset Password
+
+Roles
+
+* Student
+* Mentor
+* Admin
+
+---
+
+## AI Stack
+
+Choose the best technologies whenever applicable.
+
+Preferred
+
+* OpenAI GPT-5.x / GPT-4.1 (or latest available)
+* Gemini 2.5 Pro as optional provider
+* LangChain
+* LangGraph (if agent workflows improve reliability)
+* Instructor/Pydantic structured outputs
+* Whisper for Speech-to-Text
+* ElevenLabs or OpenAI TTS for voice interviews
+
+Use AI intelligently.
+
+Avoid unnecessary API calls.
+
+Cache responses whenever possible.
+
+---
+
+## Vector Database
+
+Use
+
+ChromaDB
+
+Purpose
+
+* Long-term memory
+* Student learning history
+* AI context retrieval
+* Personalized recommendations
+* Retrieval Augmented Generation (RAG)
+
+---
+
+## Storage
+
+AWS S3
+
+Store
+
+* Resume
+* Certificates
+* Assignment files
+* Images
+* Interview recordings
+
+---
+
+## Caching
+
+Redis
+
+Use for
+
+* Authentication cache
+* Frequently accessed data
+* AI response cache
+* Session storage
+
+---
+
+## Deployment
+
+Frontend
+
+* Vercel
+
+Backend
+
+* Docker
+* Railway / Render / AWS ECS
+
+Database
+
+* PostgreSQL
+
+Storage
+
+* AWS S3
+
+CI/CD
+
+* GitHub Actions
+
+---
+
+# Core Modules
+
+## Authentication Module
+
+* Login
+* Register
+* JWT Authentication
+* Profile Setup
+* Multi-role Access
+* Password Reset
+* Email Verification
+
+---
+
+## Profession Selection
+
+Student chooses
+
+* AI Engineer
+* ML Engineer
+* Data Scientist
+* Full Stack Developer
+* Frontend Developer
+* Backend Developer
+* DevOps Engineer
+* Cybersecurity
+* Cloud Engineer
+* Android Developer
+* UI/UX Designer
+
+Each profession contains
+
+* Required Skills
+* Learning Path
+* Industry Projects
+* Resources
+* Interview Questions
+
+---
+
+## Real World Task Engine
+
+Generate tasks similar to real company work.
+
+Every task contains
+
+* Description
+* Requirements
+* Deliverables
+* Deadline
+* Difficulty
+* Estimated Time
+* Required Skills
+* Learning Outcome
+
+Students submit
+
+* Code
+* PDF
+* GitHub Repository
+* Live URL
+
+---
+
+## AI Evaluation System
+
+The AI should evaluate submissions like a senior software engineer.
+
+Provide
+
+* Overall Score
+* Code Review
+* Best Practices
+* Performance Analysis
+* Security Review
+* Architecture Feedback
+* Maintainability
+* Scalability
+* Suggestions
+* Learning Resources
+* Improvement Roadmap
+
+Never provide generic responses.
+
+Feedback must be personalized.
+
+---
+
+## AI Mock Interview
+
+Support
+
+* HR Interview
+* Technical Interview
+* Coding Interview
+* Resume Interview
+* Behavioral Interview
+
+Interview Flow
+
+Greeting
+
+↓
+
+Questions
+
+↓
+
+Follow-up Questions
+
+↓
+
+Cross Questions
+
+↓
+
+Evaluation
+
+↓
+
+Detailed Report
+
+Final Report
+
+* Technical Score
+* Communication
+* Confidence
+* Problem Solving
+* Leadership
+* Overall Score
+* Weak Areas
+* Suggestions
+
+---
+
+## Resume Analyzer
+
+Analyze
+
+* ATS Score
+* Missing Keywords
+* Missing Skills
+* Formatting
+* Improvement Suggestions
+* Project Suggestions
+
+---
+
+## Personalized Learning Roadmap
+
+Generate dynamically using
+
+* Profession
+* Completed Tasks
+* AI Feedback
+* Weak Areas
+* Interview Reports
+
+AI should automatically recommend
+
+* Next Task
+* Next Project
+* Certifications
+* Courses
+* Practice Questions
+
+---
+
+## Student Dashboard
+
+Dashboard should include
+
+* Career Readiness Score
+* Today's Tasks
+* Pending Tasks
+* Completed Tasks
+* AI Feedback History
+* Interview History
+* Weekly Progress
+* Monthly Progress
+* Skill Radar
+* Streak Counter
+* Leaderboard
+* Recent Activity
+* Recommended Tasks
+* AI Suggestions
+
+Everything should update in real time.
+
+---
+
+## Mentor Dashboard
+
+* Student Performance
+* Task Creation
+* Analytics
+* Progress Reports
+* Leaderboards
+
+---
+
+## Admin Dashboard
+
+* User Management
+* Profession Management
+* Analytics
+* AI Usage
+* Platform Statistics
+
+---
+
+# UI / UX Guidelines
+
+The interface should target **Gen Z students**.
+
+Use a vibrant yet professional design system.
+
+Preferred palette:
+
+* Indigo
+* Violet
+* Electric Blue
+* Cyan
+* Emerald (for success)
+* Amber (for warnings)
+* Rose (for critical actions)
+
+Avoid overly saturated colors. Maintain excellent contrast and accessibility (WCAG compliant).
+
+Design should include:
+
+* Smooth page transitions (Framer Motion)
+* Rounded cards (16–24px)
+* Soft shadows
+* Minimal glass effects
+* Skeleton loaders
+* Micro-interactions
+* Empty states with illustrations
+* Beautiful charts and progress indicators
+* Professional typography (Inter or Geist)
+* Consistent spacing using an 8px grid system
+
+The dashboard should feel comparable to products like **Notion, Linear, Vercel, GitHub, and Duolingo**, adapted for student learning.
+
+---
+
+# Error Handling & Reliability
+
+The application must be highly reliable and resilient.
+
+Implement:
+
+* Centralized exception handling
+* Global error middleware
+* Structured logging
+* Request validation
+* Graceful API failure responses
+* Retry mechanisms for AI calls
+* Timeouts and circuit breakers where appropriate
+* Input sanitization
+* SQL injection protection
+* XSS and CSRF protection (where applicable)
+* Rate limiting
+* Comprehensive server-side validation
+
+For development:
+
+* Enable linting (ESLint, Ruff)
+* Formatting (Prettier, Black)
+* Static type checking
+* Automated tests
+* CI quality gates
+
+Include AI-assisted debugging support by integrating development tools (e.g., GitHub Copilot/Cursor) and automated code quality checks. Do **not** claim impossible "bug auto-fixing" in production; instead, design a workflow that detects issues early and suggests fixes during development.
+
+---
+
+# Performance
+
+Target:
+
+* Lighthouse score >95
+* Fast initial load
+* Lazy loading
+* Code splitting
+* Image optimization
+* API caching
+* Pagination
+* Infinite scrolling where appropriate
+* Efficient database indexing
+
+---
+
+# Code Quality Standards
+
+Follow:
+
+* SOLID Principles
+* DRY
+* KISS
+* Clean Architecture
+* Repository Pattern
+* Service Layer
+* Reusable Components
+* Modular Folder Structure
+* Type-safe APIs
+* Comprehensive Documentation
+* Swagger/OpenAPI
+
+Every module should be independently maintainable and production-ready.
+
+---
+
+# Final Goal
+
+Build **AI Career Hub** as a premium, scalable SaaS platform that feels polished enough to be used by universities, training institutes, and placement cells. Every feature should contribute to helping students gain practical experience, receive high-quality AI mentorship, measure their progress, and confidently prepare for real-world technical interviews. The final product should emphasize performance, security, maintainability, exceptional user experience, and enterprise-grade engineering practices.
