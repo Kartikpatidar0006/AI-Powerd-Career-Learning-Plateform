@@ -1,0 +1,45 @@
+AI Career Hub — Alembic Migration Directory
+============================================
+
+This directory is managed by Alembic (https://alembic.sqlalchemy.org).
+
+Files
+-----
+  env.py            — Migration environment: loads settings, Base, and runs
+                      offline or online migrations.
+  script.py.mako    — Template used to generate new migration files.
+  versions/         — Auto-generated migration scripts.  Do not rename or
+                      reorder files manually; Alembic tracks history by
+                      revision ID chains, not filename order.
+
+Quick Reference (run from backend/)
+------------------------------------
+  Generate a migration (after editing models):
+      .\\venv\\Scripts\\alembic revision --autogenerate -m "describe change"
+
+  Apply all pending migrations:
+      .\\venv\\Scripts\\alembic upgrade head
+
+  Roll back one step:
+      .\\venv\\Scripts\\alembic downgrade -1
+
+  View current revision:
+      .\\venv\\Scripts\\alembic current
+
+  View full history:
+      .\\venv\\Scripts\\alembic history --verbose
+
+  Generate offline SQL (no live DB required):
+      .\\venv\\Scripts\\alembic upgrade head --sql > migration.sql
+
+Adding a New Model
+------------------
+1. Create  backend/app/models/my_model.py
+2. Define  class MyModel(Base): ...
+3. Register in backend/app/db/base.py:
+       from app.models.my_model import MyModel  # noqa: F401
+4. Generate the migration:
+       .\\venv\\Scripts\\alembic revision --autogenerate -m "add my_model table"
+5. Review the generated file in versions/ before applying.
+6. Apply:
+       .\\venv\\Scripts\\alembic upgrade head

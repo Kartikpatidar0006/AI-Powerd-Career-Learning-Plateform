@@ -1,0 +1,75 @@
+# ===========================================================================
+# docker-compose.yml
+# -------------------
+# Development-only Docker Compose file for AI Career Hub backend services.
+#
+# What this starts:
+#   • postgres  — PostgreSQL 16 database server on port 5432
+#   • pgadmin   — Web-based DB admin UI on http://localhost:5050  (optional)
+#
+# Usage:
+#   Start (detached):   docker compose up -d
+#   Stop:               docker compose down
+#   Stop + wipe data:   docker compose down -v
+#   View logs:          docker compose logs -f postgres
+# ===========================================================================
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────── #
+  postgres:
+    image: postgres:16-alpine          # Alpine = minimal image (~80MB vs ~400MB)
+    container_name: career_platform_db
+    restart: unless-stopped            # Auto-restart on Docker daemon restart
+
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       career_platform
+
+    ports:
+      - "5432:5432"                    # host:container — matches .env defaults
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # Persist data across restarts
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d career_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── pgAdmin (optional) ────────────────────────────────────────────────── #
+  # Access at: http://localhost:5050
+  # Login: admin@admin.com / admin
+  # Add server: host=postgres, port=5432, user=postgres, pass=postgres
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: career_platform_pgadmin
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy    # Only start once PostgreSQL is ready
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"  # Single-user desktop mode
+
+    ports:
+      - "5050:80"
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    profiles:
+      - tools                         # Only starts with: docker compose --profile tools up -d
+
+
+# ── Named volumes ──────────────────────────────────────────────────────────── #
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
