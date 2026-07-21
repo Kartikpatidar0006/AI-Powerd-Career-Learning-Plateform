@@ -20,6 +20,7 @@ pydantic-settings>=2.3.0,<3.0.0         # Settings management with .env support
 # --- Security / Auth (foundation only; used in future auth module) ---
 python-jose[cryptography]>=3.3.0,<4.0.0 # JWT encoding/decoding
 passlib[bcrypt]>=1.7.4,<2.0.0           # Password hashing
+bcrypt>=4.0.0,<5.0.0                    # Pinned: passlib 1.7.x is incompatible with bcrypt 5.x (removed __about__)
 
 # --- Utilities ---
 python-multipart>=0.0.9,<1.0.0          # Form data / file upload parsing
