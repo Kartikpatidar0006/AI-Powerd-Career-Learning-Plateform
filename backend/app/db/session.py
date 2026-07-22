@@ -33,7 +33,7 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-from sqlalchemy import URL, create_engine, event, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -207,10 +207,8 @@ def get_db() -> Generator[Session, None, None]:
     """
     db: Session = SessionLocal()
     try:
-        logger.debug("DB session opened.")
-        yield db
-        db.commit()
-        logger.debug("DB session committed.")
+       logger.debug("DB session opened.")
+       yield db
     except SQLAlchemyError as exc:
         logger.error(
             "DB error — rolling back session. Reason: %s",
@@ -231,7 +229,7 @@ def get_db() -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
-        logger.debug("DB session closed.")
+        logger.debug("DB session committed.")
 
 
 # =========================================================================== #

@@ -425,10 +425,9 @@ def _register_routers(app: FastAPI) -> None:
         tags=["Tasks"],
     )
 
-    # ── 🔲 Auth — PENDING (router file is empty) ──────────────────────────── #
-    # Uncomment when app/api/v1/auth/router.py is implemented:
-    # from app.api.v1.auth.router import router as auth_router
-    # app.include_router(auth_router, prefix=f"{prefix}/auth", tags=["Auth"])
+    # ── ✅ Auth ────────────────────────────────────────────────────────────── #
+    from app.api.v1.auth.router import router as auth_router
+    app.include_router(auth_router, prefix=f"{prefix}/auth", tags=["Auth"])
 
     # ── 🔲 AI — PENDING (router file is empty) ────────────────────────────── #
     # Uncomment when app/api/v1/ai/router.py is implemented:
@@ -436,7 +435,7 @@ def _register_routers(app: FastAPI) -> None:
     # app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["AI"])
 
     logger.debug(
-        "Routers registered: users, dashboard, interviews, professions, resume, tasks"
+        "Routers registered: auth, users, dashboard, interviews, professions, resume, tasks"
     )
 
 

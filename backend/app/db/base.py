@@ -116,7 +116,7 @@ from app.models.user import User                          # noqa: F401
 from app.models.role import Role                            # noqa: F401
 #
 # Career
-# from app.models.profession import Profession              # noqa: F401
+from app.models.profession import Profession              # noqa: F401
 #
 # Learning
 # from app.models.task import Task                          # noqa: F401

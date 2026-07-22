@@ -80,7 +80,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # Accept a comma-separated string from .env, e.g.:
     #   BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-    BACKEND_CORS_ORIGINS: list[str] = [
+    # Accepts either a JSON array or a comma-separated string from .env.
+    # Annotated as `str | list[str]` so pydantic-settings v2 skips its
+    # automatic JSON-decode step and lets the field_validator handle both formats.
+    BACKEND_CORS_ORIGINS: str | list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",

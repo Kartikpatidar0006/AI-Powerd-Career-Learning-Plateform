@@ -24,7 +24,7 @@ Provos and David Mazières (1999).  Its key properties for production use are:
   • Timing-safe comparison:  Passlib's verify() performs a constant-time
     comparison, eliminating timing side-channel leaks.
 
-  • OWASP recommendation:  bcrypt (with cost ≥ 12) is on OWASP's approved list
+  • OWASP recommendation:  bcrypt (with cost >= 12) is on OWASP's approved list
     for password storage (OWASP ASVS v4.0, section 2.4.1).
 
 Alternatives considered:
@@ -77,12 +77,14 @@ Security best practices implemented here:
     downgrade attack.
   • No sensitive data (passwords, PII) is placed in the JWT payload — JWTs
     are signed, NOT encrypted; anyone can base64-decode the payload.
+  • Internal cryptographic exceptions are never surfaced to API consumers;
+    only safe HTTPException messages are returned.
 
 ──────────────────────────────────────────────────────────────────────────────
 USAGE EXAMPLE
 ──────────────────────────────────────────────────────────────────────────────
     from app.core.security import (
-        get_password_hash,
+        hash_password,
         verify_password,
         create_access_token,
         create_refresh_token,
@@ -90,7 +92,7 @@ USAGE EXAMPLE
     )
 
     # Registration
-    hashed = get_password_hash("super-secret-password")
+    hashed = hash_password("super-secret-password")
 
     # Login
     if verify_password("super-secret-password", hashed):
@@ -98,35 +100,47 @@ USAGE EXAMPLE
         refresh_token = create_refresh_token(subject=str(user.id))
 
     # Protected route — token validation
-    payload = decode_token(access_token)   # raises JWTError if invalid
+    payload = decode_token(access_token)   # raises HTTPException if invalid
     user_id = payload["sub"]
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Union
 
-from jose import JWTError, jwt  # noqa: F401  (JWTError re-exported for callers)
+from fastapi import HTTPException, status
+from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public API
+# Module logger
+# ─────────────────────────────────────────────────────────────────────────────
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API surface
 # ─────────────────────────────────────────────────────────────────────────────
 
 __all__: list[str] = [
+    # Password utilities
     "password_context",
+    "hash_password",
     "verify_password",
-    "get_password_hash",
+    # JWT utilities
     "create_access_token",
     "create_refresh_token",
     "decode_token",
+    # Re-exported for callers that want to catch JWT errors directly
+    "JWTError",
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Internal constants
+# Module-level constants
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Token type discriminators — stored in the JWT payload's `type` claim.
@@ -134,6 +148,19 @@ __all__: list[str] = [
 # enables IDE rename-refactoring across the entire codebase.
 _ACCESS_TOKEN_TYPE: str = "access"
 _REFRESH_TOKEN_TYPE: str = "refresh"
+
+# Standard error responses — centralised so wording is consistent across all
+# raised HTTPExceptions and no internal detail leaks to API consumers.
+_CREDENTIALS_EXCEPTION: HTTPException = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Could not validate credentials.",
+    headers={"WWW-Authenticate": "Bearer"},
+)
+_EXPIRED_TOKEN_EXCEPTION: HTTPException = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Token has expired.",
+    headers={"WWW-Authenticate": "Bearer"},
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Password hashing — singleton CryptContext
@@ -156,85 +183,89 @@ password_context: CryptContext = CryptContext(
     deprecated="auto",
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Password utilities
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def hash_password(password: str) -> str:
+    """Hash a plain-text password using bcrypt via Passlib's CryptContext.
+
+    Passlib automatically:
+
+      - Generates a cryptographically random 128-bit salt.
+      - Applies the configured bcrypt cost factor (default: 12 rounds).
+      - Encodes the algorithm identifier, cost, salt, and digest into a
+        single portable string (Modular Crypt Format / PHC string format).
+
+    The returned string is self-describing — it contains all information
+    needed to verify against it in the future, including the algorithm and
+    cost factor, so no additional metadata needs to be stored separately.
+
+    Args:
+        password: The raw, plain-text password to hash.  Should already have
+            been validated for minimum length and complexity by the Pydantic
+            schema layer before reaching this function.
+
+    Returns:
+        A 60-character bcrypt hash string that is safe to persist in the
+        database.
+
+    Note:
+        bcrypt silently truncates input at 72 bytes.  If your password policy
+        allows very long passphrases, consider pre-hashing with SHA-256 before
+        passing to bcrypt (the "shucking" mitigation).  For this platform's
+        current requirements the 72-byte limit is acceptable.
+
+    Example::
+
+        user.hashed_password = hash_password(schema.password)
+        db.add(user)
+        db.commit()
+    """
+    hashed: str = password_context.hash(password)
+    logger.debug("Password hashed successfully.")
+    return hashed
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain-text password against a stored bcrypt hash.
 
     Passlib's :py:meth:`CryptContext.verify` performs a **constant-time**
-    comparison, which means the function takes the same amount of time
-    regardless of whether the password matches or not.  This prevents
-    timing-based side-channel attacks that could reveal information about
-    the stored hash.
+    comparison, which means the function takes approximately the same amount
+    of time regardless of whether the password matches or not.  This prevents
+    timing-based side-channel attacks that could reveal information about the
+    stored hash.
 
-    Parameters
-    ----------
-    plain_password:
-        The raw password supplied by the user (e.g. from a login form).
-    hashed_password:
-        The bcrypt hash retrieved from the database for the given user.
+    Args:
+        plain_password: The raw password supplied by the user (e.g. from a
+            login form or API request body).
+        hashed_password: The bcrypt hash retrieved from the database for the
+            given user account.
 
-    Returns
-    -------
-    bool
-        ``True`` if the password matches the hash, ``False`` otherwise.
+    Returns:
+        ``True`` if the plain-text password matches the hash, ``False``
+        otherwise.
 
-    Notes
-    -----
-    Never compare password hashes using ``==`` or ``hmac.compare_digest``
-    directly — always delegate to Passlib, which handles algorithm-specific
-    nuances (encoding, salt extraction, cost factor).
+    Note:
+        Never compare password hashes using ``==`` or ``hmac.compare_digest``
+        directly — always delegate to Passlib, which handles algorithm-specific
+        nuances (encoding, salt extraction, cost factor).
 
-    Example
-    -------
-    ::
+    Example::
 
         if not verify_password(form.password, db_user.hashed_password):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials.",
+            )
     """
-    return password_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Hash a plain-text password using bcrypt.
-
-    Passlib automatically:
-      - Generates a cryptographically random 128-bit salt.
-      - Applies the configured bcrypt cost factor (default: 12 rounds).
-      - Encodes the algorithm identifier, cost, salt, and digest into a
-        single portable string (Modular Crypt Format / PHC string format).
-
-    Parameters
-    ----------
-    password:
-        The raw password to hash.  Should already have been validated for
-        minimum length / complexity by the Pydantic schema layer before
-        reaching this function.
-
-    Returns
-    -------
-    str
-        A 60-character bcrypt hash string safe to store in the database.
-
-    Security note
-    -------------
-    bcrypt silently truncates input at 72 bytes.  If your password policy
-    allows very long passphrases, consider pre-hashing with SHA-256 before
-    passing to bcrypt (the "shucking" mitigation).  For this platform's
-    current requirements the 72-byte limit is acceptable.
-
-    Example
-    -------
-    ::
-
-        user.hashed_password = get_password_hash(schema.password)
-        db.add(user)
-    """
-    return password_context.hash(password)
+    is_valid: bool = password_context.verify(plain_password, hashed_password)
+    if is_valid:
+        logger.debug("Password verification succeeded.")
+    else:
+        logger.warning("Password verification failed — plain-text did not match hash.")
+    return is_valid
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,18 +284,14 @@ def _build_token(
     :func:`create_refresh_token` to eliminate duplication while keeping the
     public API surface minimal and explicit.
 
-    Parameters
-    ----------
-    subject:
-        The ``sub`` claim value — typically the user's UUID as a string.
-    token_type:
-        Value for the custom ``type`` claim (``"access"`` or ``"refresh"``).
-    expires_delta:
-        How long from *now* the token should remain valid.
+    Args:
+        subject: The ``sub`` claim value — typically the user's UUID as a
+            string.  Must already be coerced to ``str`` by the caller.
+        token_type: Value for the custom ``type`` claim.  Must be one of
+            ``"access"`` or ``"refresh"``.
+        expires_delta: How long from *now* the token should remain valid.
 
-    Returns
-    -------
-    str
+    Returns:
         A compact, URL-safe, period-delimited JWT string
         (``header.payload.signature``).
     """
@@ -272,11 +299,11 @@ def _build_token(
     expire: datetime = now + expires_delta
 
     payload: dict[str, Any] = {
-        # ── RFC 7519 registered claims ────────────────────────────────────── #
-        "sub": subject,   # Subject   — who the token represents
-        "exp": expire,    # Expiry    — python-jose accepts a datetime object
-        "iat": now,       # Issued-at — useful for token age / reuse detection
-        # ── Custom discriminator claim ────────────────────────────────────── #
+        # ── RFC 7519 registered claims ─────────────────────────────────────── #
+        "sub": subject,    # Subject   — who the token represents
+        "exp": expire,     # Expiry    — python-jose accepts a datetime object
+        "iat": now,        # Issued-at — useful for token age / reuse detection
+        # ── Custom discriminator claim ─────────────────────────────────────── #
         # Prevents cross-type token misuse: a refresh token is rejected when
         # the caller expects an access token, and vice versa, even if both are
         # cryptographically valid for the same SECRET_KEY.
@@ -291,6 +318,13 @@ def _build_token(
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
+
+    logger.debug(
+        "JWT created | type=%s | subject=%s | expires_at=%s",
+        token_type,
+        subject,
+        expire.isoformat(),
+    )
     return encoded_jwt
 
 
@@ -300,10 +334,10 @@ def _build_token(
 
 
 def create_access_token(
-    subject: str,
+    subject: Union[str, int],
     expires_delta: timedelta | None = None,
 ) -> str:
-    """Create a short-lived JWT access token.
+    """Create a short-lived JWT access token for a given subject.
 
     Access tokens are the primary authentication credential sent by the client
     on every protected API request via the ``Authorization: Bearer`` header.
@@ -311,35 +345,27 @@ def create_access_token(
     and expiry time without consulting the database, allowing the API to scale
     horizontally without a shared session store.
 
-    Parameters
-    ----------
-    subject:
-        A string that uniquely identifies the principal (typically
-        ``str(user.id)`` or the user's email).  Stored in the ``sub`` claim.
-    expires_delta:
-        Override the default TTL defined by
-        :attr:`~app.core.config.Settings.ACCESS_TOKEN_EXPIRE_MINUTES`.
-        Pass an explicit :class:`~datetime.timedelta` when you need a
-        non-standard lifetime (e.g., a short-lived one-time email-verification
-        token).
+    Args:
+        subject: A value that uniquely identifies the principal — typically
+            ``str(user.id)`` or the user's UUID.  Integer values are coerced
+            to ``str`` before encoding so the ``sub`` claim is always a string
+            per RFC 7519.
+        expires_delta: Override the default TTL defined by
+            ``settings.ACCESS_TOKEN_EXPIRE_MINUTES``.  Pass an explicit
+            :class:`~datetime.timedelta` when you need a non-standard lifetime
+            (e.g., a short-lived one-time email-verification token).  If
+            ``None``, the configured default is used.
 
-    Returns
-    -------
-    str
-        A signed, compact JWT string.
+    Returns:
+        A signed, compact JWT string ready to be returned to the client.
 
-    Payload claims
-    --------------
-    =========  =================================================
-    ``sub``    Subject — the ``subject`` parameter value.
-    ``exp``    Expiry  — UTC timestamp (now + TTL).
-    ``iat``    Issued-at — current UTC timestamp.
-    ``type``   ``"access"`` — discriminator claim.
-    =========  =================================================
+    Payload claims:
+        - ``sub``  — Subject: the stringified ``subject`` argument.
+        - ``exp``  — Expiry: UTC timestamp (now + TTL).
+        - ``iat``  — Issued-at: current UTC timestamp.
+        - ``type`` — ``"access"``: discriminator claim.
 
-    Example
-    -------
-    ::
+    Example::
 
         token = create_access_token(subject=str(user.id))
         return {"access_token": token, "token_type": "bearer"}
@@ -348,17 +374,14 @@ def create_access_token(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     return _build_token(
-        subject=subject,
+        subject=str(subject),
         token_type=_ACCESS_TOKEN_TYPE,
         expires_delta=delta,
     )
 
 
-def create_refresh_token(
-    subject: str,
-    expires_delta: timedelta | None = None,
-) -> str:
-    """Create a long-lived JWT refresh token.
+def create_refresh_token(subject: Union[str, int]) -> str:
+    """Create a long-lived JWT refresh token for a given subject.
 
     Refresh tokens are used **solely** to obtain a new access token once the
     current one expires, without requiring the user to re-enter credentials.
@@ -366,41 +389,36 @@ def create_refresh_token(
     ``HttpOnly``, ``Secure``, ``SameSite=Strict`` cookie to prevent JavaScript
     access and CSRF-based token theft.
 
-    Design considerations
-    ---------------------
-    • The ``type="refresh"`` claim allows the token validation layer to
-      reject a refresh token when an access token is expected, and vice versa.
-    • In a production deployment, refresh tokens should be persisted in a
-      server-side store (Redis or database) so they can be **rotated** and
-      **revoked** (e.g., on logout, suspicious IP change, or detected reuse).
-      This module intentionally omits that persistence — it belongs in the
-      service / repository layers.
+    The TTL is fixed to the value configured in
+    ``settings.REFRESH_TOKEN_EXPIRE_DAYS`` and is intentionally not
+    overridable by callers.  This constraint prevents accidental issuance of
+    excessively long-lived refresh tokens from call sites.
 
-    Parameters
-    ----------
-    subject:
-        A string uniquely identifying the principal (typically ``str(user.id)``).
-    expires_delta:
-        Override the default TTL defined by
-        :attr:`~app.core.config.Settings.REFRESH_TOKEN_EXPIRE_DAYS`.
+    Design considerations:
+        - The ``type="refresh"`` claim allows the token validation layer to
+          reject a refresh token when an access token is expected, and vice
+          versa.
+        - In a production deployment, refresh tokens should be persisted in a
+          server-side store (Redis or database) so they can be **rotated** and
+          **revoked** (e.g., on logout, suspicious IP change, or detected
+          reuse).  This module intentionally omits that persistence — it
+          belongs in the service / repository layers.
 
-    Returns
-    -------
-    str
+    Args:
+        subject: A value that uniquely identifies the principal — typically
+            ``str(user.id)``.  Integer values are coerced to ``str`` before
+            encoding so the ``sub`` claim is always a string per RFC 7519.
+
+    Returns:
         A signed, compact JWT string.
 
-    Payload claims
-    --------------
-    =========  =================================================
-    ``sub``    Subject — the ``subject`` parameter value.
-    ``exp``    Expiry  — UTC timestamp (now + TTL).
-    ``iat``    Issued-at — current UTC timestamp.
-    ``type``   ``"refresh"`` — discriminator claim.
-    =========  =================================================
+    Payload claims:
+        - ``sub``  — Subject: the stringified ``subject`` argument.
+        - ``exp``  — Expiry: UTC timestamp (now + TTL).
+        - ``iat``  — Issued-at: current UTC timestamp.
+        - ``type`` — ``"refresh"``: discriminator claim.
 
-    Example
-    -------
-    ::
+    Example::
 
         refresh_token = create_refresh_token(subject=str(user.id))
         response.set_cookie(
@@ -411,11 +429,9 @@ def create_refresh_token(
             samesite="strict",
         )
     """
-    delta: timedelta = expires_delta or timedelta(
-        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-    )
+    delta: timedelta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     return _build_token(
-        subject=subject,
+        subject=str(subject),
         token_type=_REFRESH_TOKEN_TYPE,
         expires_delta=delta,
     )
@@ -428,74 +444,79 @@ def decode_token(token: str) -> dict[str, Any]:
     which performs the following checks automatically:
 
       1. **Signature verification** — the token's HMAC-SHA256 signature is
-         recomputed using :attr:`~app.core.config.Settings.SECRET_KEY` and
-         compared against the embedded signature.  A mismatch raises
-         :class:`~jose.JWTError`.
+         recomputed using ``settings.SECRET_KEY`` and compared against the
+         embedded signature.  A mismatch raises :class:`~jose.JWTError`.
       2. **Expiry check** — if ``exp`` is in the past,
          :class:`~jose.ExpiredSignatureError` (a subclass of
          :class:`~jose.JWTError`) is raised automatically.
       3. **Algorithm enforcement** — only the algorithm declared in
-         :attr:`~app.core.config.Settings.ALGORITHM` is accepted, preventing
-         algorithm-confusion / "alg:none" downgrade attacks.
+         ``settings.ALGORITHM`` is accepted, preventing algorithm-confusion /
+         "alg:none" downgrade attacks.
+
+    Internal exceptions are **never** propagated to the caller.  All error
+    conditions are converted to a safe :class:`~fastapi.HTTPException` so that
+    no cryptographic implementation detail leaks to API consumers.
 
     This function deliberately does **not** inspect the ``type`` claim — that
     responsibility belongs to the caller (e.g., the authentication dependency
     or the refresh-token endpoint), which knows whether it expects an access or
     a refresh token.
 
-    Parameters
-    ----------
-    token:
-        The raw JWT string received from the client (stripped of any
-        ``Bearer `` prefix before calling this function).
+    Args:
+        token: The raw JWT string received from the client.  Strip any
+            ``Bearer `` prefix before calling this function (FastAPI's
+            :class:`~fastapi.security.OAuth2PasswordBearer` does this
+            automatically).
 
-    Returns
-    -------
-    dict[str, Any]
+    Returns:
         The decoded payload dictionary.  Typical keys: ``sub``, ``exp``,
         ``iat``, ``type``.
 
-    Raises
-    ------
-    jose.JWTError
-        Raised for any of the following conditions:
+    Raises:
+        fastapi.HTTPException: HTTP **401 Unauthorized** in all of the
+            following error conditions:
 
-        * Invalid or tampered signature.
-        * Token has expired (``ExpiredSignatureError``).
-        * Malformed token structure (wrong number of segments, bad Base64).
-        * Algorithm mismatch.
+            - Token signature is invalid or has been tampered with.
+            - Token has expired (``exp`` claim is in the past).
+            - Token is structurally malformed (wrong segments, bad Base64).
+            - Algorithm declared in the token header does not match the
+              server-configured algorithm.
 
-    Example
-    -------
-    ::
+    Example::
 
-        from jose import JWTError
         from fastapi import status
 
-        try:
-            payload = decode_token(token)
-        except JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        payload = decode_token(token)   # raises HTTPException on failure
 
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid token type",
+                detail="Invalid token type.",
             )
 
         user_id: str = payload["sub"]
     """
-    # Delegating to python-jose; any cryptographic failure surfaces as a
-    # JWTError subclass (ExpiredSignatureError, JWTClaimsError, etc.).
-    # Re-raised as-is so callers can catch `JWTError` uniformly without
-    # needing to import jose directly.
-    payload: dict[str, Any] = jwt.decode(
-        token,
-        settings.SECRET_KEY,
-        algorithms=[settings.ALGORITHM],
-    )
-    return payload
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        logger.debug(
+            "JWT decoded successfully | subject=%s | type=%s",
+            payload.get("sub"),
+            payload.get("type"),
+        )
+        return payload
+
+    except ExpiredSignatureError:
+        # Log at INFO level — token expiry is an expected, non-anomalous event.
+        logger.info("JWT validation failed: token has expired.")
+        raise _EXPIRED_TOKEN_EXCEPTION
+
+    except JWTError as exc:
+        # Log at WARNING — indicates a potentially malicious or malformed token.
+        # The internal exception message is intentionally suppressed from the
+        # HTTP response to avoid leaking cryptographic implementation details.
+        logger.warning("JWT validation failed: %s", type(exc).__name__)
+        raise _CREDENTIALS_EXCEPTION
