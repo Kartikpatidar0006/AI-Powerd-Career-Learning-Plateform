@@ -7,6 +7,7 @@ Import from here rather than from individual modules to keep call-sites
 concise and to decouple the rest of the codebase from internal file layout::
 
     from app.schemas import UserCreate, UserResponse, TokenResponse
+    from app.schemas import ProfessionCreate, ProfessionResponse
 
 """
 
@@ -15,6 +16,12 @@ from app.schemas.auth import (
     PasswordChangeRequest,
     PasswordResetRequest,
     RefreshTokenRequest,
+)
+from app.schemas.profession import (
+    ProfessionCreate,
+    ProfessionListResponse,
+    ProfessionResponse,
+    ProfessionUpdate,
 )
 from app.schemas.token import (
     AccessTokenResponse,
@@ -47,4 +54,9 @@ __all__: list[str] = [
     "UserAdminUpdate",
     "UserResponse",
     "UserPublicResponse",
+    # ── Profession schemas ────────────────────────────────────────────── #
+    "ProfessionCreate",
+    "ProfessionUpdate",
+    "ProfessionResponse",
+    "ProfessionListResponse",
 ]
