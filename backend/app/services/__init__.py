@@ -10,5 +10,12 @@ Import from here to keep call-sites decoupled from internal file layout::
 
 from app.services.auth import AuthError, AuthService
 from app.services.profession import ProfessionError, ProfessionService
+from app.services.skill import SkillError, SkillService
+from app.services.learning_path import LearningPathError, LearningPathService
 
-__all__: list[str] = ["AuthService", "AuthError", "ProfessionService", "ProfessionError"]
+__all__: list[str] = [
+    "AuthService", "AuthError",
+    "ProfessionService", "ProfessionError",
+    "SkillService", "SkillError",
+    "LearningPathService", "LearningPathError",
+]

@@ -39,7 +39,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -172,6 +172,23 @@ class Profession(Base):
         server_default=func.now(),
         onupdate=func.now(),
         comment="UTC timestamp of last modification. Auto-updated.",
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────── #
+    skills: Mapped[list["Skill"]] = relationship(  # type: ignore[name-defined]
+        "Skill",
+        back_populates="profession",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="Skill.name.asc()",
+    )
+
+    learning_paths: Mapped[list["LearningPath"]] = relationship(  # type: ignore[name-defined]
+        "LearningPath",
+        back_populates="profession",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="LearningPath.sequence.asc()",
     )
 
     # ── Dunder methods ────────────────────────────────────────────────────── #

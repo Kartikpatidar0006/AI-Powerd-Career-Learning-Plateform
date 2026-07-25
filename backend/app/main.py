@@ -409,6 +409,22 @@ def _register_routers(app: FastAPI) -> None:
         tags=["Professions"],
     )
 
+    # ── ✅ Skills ─────────────────────────────────────────────────────────── #
+    from app.api.v1.skills.router import router as skills_router
+    app.include_router(
+        skills_router,
+        prefix=f"{prefix}/skills",
+        tags=["Skills"],
+    )
+
+    # ── ✅ Learning Paths ─────────────────────────────────────────────────── #
+    from app.api.v1.learning_paths.router import router as learning_paths_router
+    app.include_router(
+        learning_paths_router,
+        prefix=f"{prefix}/learning-paths",
+        tags=["Learning Paths"],
+    )
+
     # ── ✅ Resume ─────────────────────────────────────────────────────────── #
     from app.api.v1.resume.router import router as resume_router
     app.include_router(
@@ -435,7 +451,7 @@ def _register_routers(app: FastAPI) -> None:
     # app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["AI"])
 
     logger.debug(
-        "Routers registered: auth, users, dashboard, interviews, professions, resume, tasks"
+        "Routers registered: auth, users, dashboard, interviews, professions, skills, resume, tasks"
     )
 
 

@@ -10,5 +10,13 @@ Import from here to keep call-sites decoupled from internal file layout::
 
 from app.repositories.user import UserRepository
 from app.repositories.profession import ProfessionRepository
+from app.repositories.skill import SkillRepository
+from app.repositories.learning_path import LearningPathRepository
 
-__all__: list[str] = ["UserRepository", "ProfessionRepository"]
+__all__: list[str] = [
+    "UserRepository",
+    "ProfessionRepository",
+    "SkillRepository",
+    "LearningPathRepository",
+]
+

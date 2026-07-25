@@ -23,6 +23,19 @@ from app.schemas.profession import (
     ProfessionResponse,
     ProfessionUpdate,
 )
+from app.schemas.skill import (
+    DifficultyLevel,
+    SkillCreate,
+    SkillListResponse,
+    SkillResponse,
+    SkillUpdate,
+)
+from app.schemas.learning_path import (
+    LearningPathCreate,
+    LearningPathListResponse,
+    LearningPathResponse,
+    LearningPathUpdate,
+)
 from app.schemas.token import (
     AccessTokenResponse,
     TokenPayload,
@@ -59,4 +72,15 @@ __all__: list[str] = [
     "ProfessionUpdate",
     "ProfessionResponse",
     "ProfessionListResponse",
+    # ── Skill schemas ─────────────────────────────────────────────────────────────── #
+    "DifficultyLevel",
+    "SkillCreate",
+    "SkillUpdate",
+    "SkillResponse",
+    "SkillListResponse",
+    # ── LearningPath schemas ──────────────────────────────────────────────────── #
+    "LearningPathCreate",
+    "LearningPathUpdate",
+    "LearningPathResponse",
+    "LearningPathListResponse",
 ]
