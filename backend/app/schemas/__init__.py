@@ -36,6 +36,13 @@ from app.schemas.learning_path import (
     LearningPathResponse,
     LearningPathUpdate,
 )
+from app.schemas.course import (
+    CourseDifficultyLevel,
+    CourseCreate,
+    CourseListResponse,
+    CourseResponse,
+    CourseUpdate,
+)
 from app.schemas.token import (
     AccessTokenResponse,
     TokenPayload,
@@ -49,6 +56,25 @@ from app.schemas.user import (
     UserResponse,
     UserUpdate,
 )
+from app.schemas.user_progress import (
+    ProgressStatus,
+    UserProgressCreate,
+    UserProgressListResponse,
+    UserProgressResponse,
+    UserProgressUpdate,
+)
+from app.schemas.career_roadmap import (
+    RoadmapDifficultyLevel,
+    CareerRoadmapCreate,
+    CareerRoadmapUpdate,
+    CareerRoadmapResponse,
+    CareerRoadmapListResponse,
+    RoadmapStepCreate,
+    RoadmapStepUpdate,
+    RoadmapStepResponse,
+    RoadmapStepListResponse,
+)
+from app.schemas.skill_gap import SkillSummary, SkillGapAnalysis
 
 __all__: list[str] = [
     # ── Auth request schemas ──────────────────────────────────────────── #
@@ -83,4 +109,29 @@ __all__: list[str] = [
     "LearningPathUpdate",
     "LearningPathResponse",
     "LearningPathListResponse",
+    # ── Course schemas ────────────────────────────────────────────────────── #
+    "CourseDifficultyLevel",
+    "CourseCreate",
+    "CourseUpdate",
+    "CourseResponse",
+    "CourseListResponse",
+    # ── UserProgress schemas ───────────────────────────────────────────── #
+    "ProgressStatus",
+    "UserProgressCreate",
+    "UserProgressUpdate",
+    "UserProgressResponse",
+    "UserProgressListResponse",
+    # ── CareerRoadmap schemas ──────────────────────────────────────────── #
+    "RoadmapDifficultyLevel",
+    "CareerRoadmapCreate",
+    "CareerRoadmapUpdate",
+    "CareerRoadmapResponse",
+    "CareerRoadmapListResponse",
+    "RoadmapStepCreate",
+    "RoadmapStepUpdate",
+    "RoadmapStepResponse",
+    "RoadmapStepListResponse",
+    # ── AI Skill Gap schemas ───────────────────────────────────────────── #
+    "SkillSummary",
+    "SkillGapAnalysis",
 ]

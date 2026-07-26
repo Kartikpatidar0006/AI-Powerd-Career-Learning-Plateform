@@ -145,6 +145,27 @@ class Skill(Base):
         lazy="select",
     )
 
+    courses: Mapped[list["Course"]] = relationship(  # type: ignore[name-defined]
+        "Course",
+        back_populates="skill",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="Course.title.asc()",
+    )
+
+    user_progress_records: Mapped[list["UserProgress"]] = relationship(  # type: ignore[name-defined]
+        "UserProgress",
+        back_populates="skill",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    roadmap_steps: Mapped[list["RoadmapStep"]] = relationship(  # type: ignore[name-defined]
+        "RoadmapStep",
+        back_populates="skill",
+        lazy="select",
+    )
+
     # ── Dunder methods ────────────────────────────────────────────────────── #
 
     def __repr__(self) -> str:

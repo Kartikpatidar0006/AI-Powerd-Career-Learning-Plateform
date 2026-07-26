@@ -345,6 +345,14 @@ class User(Base):
         doc="The role assigned to this user, or None if no role has been assigned.",
     )
 
+    progress_records: Mapped[list["UserProgress"]] = relationship(  # type: ignore[name-defined]
+        "UserProgress",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+        doc="All skill progress records belonging to this user.",
+    )
+
     # =========================================================================
     #  Dunder methods
     # =========================================================================

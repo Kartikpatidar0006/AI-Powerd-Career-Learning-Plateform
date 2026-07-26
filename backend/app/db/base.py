@@ -119,6 +119,9 @@ from app.models.role import Role                            # noqa: F401
 from app.models.profession import Profession              # noqa: F401
 from app.models.skill import Skill                        # noqa: F401
 from app.models.learning_path import LearningPath         # noqa: F401
+from app.models.course import Course                      # noqa: F401
+from app.models.user_progress import UserProgress         # noqa: F401
+from app.models.career_roadmap import CareerRoadmap, RoadmapStep  # noqa: F401
 #
 # Learning
 # from app.models.task import Task                          # noqa: F401

@@ -425,6 +425,35 @@ def _register_routers(app: FastAPI) -> None:
         tags=["Learning Paths"],
     )
 
+    # ── ✅ Courses ────────────────────────────────────────────────────────── #
+    from app.api.v1.courses.router import router as courses_router
+    app.include_router(
+        courses_router,
+        prefix=f"{prefix}/courses",
+        tags=["Courses"],
+    )
+
+    # ── ✅ User Progress ──────────────────────────────────────────────────── #
+    from app.api.v1.user_progress.router import router as user_progress_router
+    app.include_router(
+        user_progress_router,
+        prefix=f"{prefix}/user-progress",
+        tags=["User Progress"],
+    )
+
+    # ── ✅ Career Roadmaps ────────────────────────────────────────────────── #
+    from app.api.v1.career_roadmaps.router import roadmap_router, step_router
+    app.include_router(
+        roadmap_router,
+        prefix=f"{prefix}/career-roadmaps",
+        tags=["Career Roadmaps"],
+    )
+    app.include_router(
+        step_router,
+        prefix=f"{prefix}/roadmap-steps",
+        tags=["Roadmap Steps"],
+    )
+
     # ── ✅ Resume ─────────────────────────────────────────────────────────── #
     from app.api.v1.resume.router import router as resume_router
     app.include_router(
@@ -445,13 +474,13 @@ def _register_routers(app: FastAPI) -> None:
     from app.api.v1.auth.router import router as auth_router
     app.include_router(auth_router, prefix=f"{prefix}/auth", tags=["Auth"])
 
-    # ── 🔲 AI — PENDING (router file is empty) ────────────────────────────── #
-    # Uncomment when app/api/v1/ai/router.py is implemented:
-    # from app.api.v1.ai.router import router as ai_router
-    # app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["AI"])
+    # ── ✅ AI ──────────────────────────────────────────────────────────────── #
+    from app.api.v1.ai.router import router as ai_router
+    app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["AI"])
 
     logger.debug(
-        "Routers registered: auth, users, dashboard, interviews, professions, skills, resume, tasks"
+        "Routers registered: auth, users, dashboard, interviews, professions,"
+        " skills, learning-paths, courses, user-progress, career-roadmaps, resume, tasks, ai"
     )
 
 

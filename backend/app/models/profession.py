@@ -191,6 +191,14 @@ class Profession(Base):
         order_by="LearningPath.sequence.asc()",
     )
 
+    career_roadmaps: Mapped[list["CareerRoadmap"]] = relationship(  # type: ignore[name-defined]
+        "CareerRoadmap",
+        back_populates="profession",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="CareerRoadmap.title.asc()",
+    )
+
     # ── Dunder methods ────────────────────────────────────────────────────── #
 
     def __repr__(self) -> str:
