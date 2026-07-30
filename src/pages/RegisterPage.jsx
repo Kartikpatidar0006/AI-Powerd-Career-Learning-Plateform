@@ -10,6 +10,7 @@ import Card from '../components/Card/Card';
 export const RegisterPage = () => {
   const { register: registerAuth, loading } = useAuth();
   const navigate = useNavigate();
+
   const {
     register,
     handleSubmit,
@@ -27,8 +28,8 @@ export const RegisterPage = () => {
         password: data.password,
       });
       navigate('/login');
-    } catch (err) {
-      // Handled by AuthContext toast
+    } catch {
+      // Error toast message handled by AuthContext
     }
   };
 
@@ -60,7 +61,7 @@ export const RegisterPage = () => {
               error={errors.email?.message}
               {...register('email', {
                 required: 'Email address is required',
-                pattern: { value: /^\S+@\S+$/i, message: 'Invalid email address' },
+                pattern: { value: /^\S+@\S+$/i, message: 'Invalid email address format' },
               })}
             />
 

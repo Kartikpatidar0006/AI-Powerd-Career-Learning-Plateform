@@ -9,6 +9,12 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const navigate = useNavigate();
 
+  const handleLogout = () => {
+    setShowDropdown(false);
+    logout();
+    navigate('/login');
+  };
+
   return (
     <nav className="navbar-container">
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -16,6 +22,7 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
           onClick={onToggleSidebar}
           style={{ background: 'none', border: 'none', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', padding: '0.25rem' }}
           className="mobile-menu-btn"
+          aria-label="Toggle Navigation Sidebar"
         >
           <Menu size={22} />
         </button>
@@ -54,9 +61,13 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
             style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.625rem' }}
           >
             <div className="avatar-circle">{getInitials(user?.full_name)}</div>
-            <div style={{ textAlign: 'left', display: 'none', '@media(min-width: 768px)': { display: 'block' } }}>
-              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-main)', lineHeight: 1.2 }}>{user?.full_name || 'User'}</p>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Learner</p>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-main)', lineHeight: 1.2 }}>
+                {user?.full_name || 'Learner Account'}
+              </p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {user?.email || 'authenticated'}
+              </p>
             </div>
           </button>
 
@@ -66,7 +77,7 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
                 position: 'absolute',
                 right: 0,
                 top: '50px',
-                width: '200px',
+                width: '220px',
                 background: 'var(--bg-sidebar)',
                 border: '1px solid var(--border-light)',
                 borderRadius: 'var(--radius-md)',
@@ -75,18 +86,21 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
                 zIndex: 200,
               }}
             >
+              <div style={{ padding: '0.5rem 0.875rem', borderBottom: '1px solid var(--border-subtle)', marginBottom: '0.375rem' }}>
+                <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-main)' }}>{user?.full_name}</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email}</p>
+              </div>
+
               <Link
                 to="/profile"
                 onClick={() => setShowDropdown(false)}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.625rem 0.875rem', color: 'var(--text-main)', textDecoration: 'none', fontSize: '0.875rem', borderRadius: 'var(--radius-sm)' }}
               >
-                <User size={16} /> Profile
+                <User size={16} /> Profile Settings
               </Link>
+
               <button
-                onClick={() => {
-                  setShowDropdown(false);
-                  logout();
-                }}
+                onClick={handleLogout}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.625rem 0.875rem', color: 'var(--accent-rose)', background: 'none', border: 'none', fontSize: '0.875rem', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
               >
                 <LogOut size={16} /> Logout

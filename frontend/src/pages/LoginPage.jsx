@@ -10,6 +10,7 @@ import Card from '../components/Card/Card';
 export const LoginPage = () => {
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+
   const {
     register,
     handleSubmit,
@@ -18,10 +19,13 @@ export const LoginPage = () => {
 
   const onSubmit = async (data) => {
     try {
-      await login(data);
+      await login({
+        email: data.email,
+        password: data.password,
+      });
       navigate('/dashboard');
-    } catch (err) {
-      // Error handled by AuthContext toast
+    } catch {
+      // Error toast message handled by AuthContext
     }
   };
 
@@ -31,7 +35,7 @@ export const LoginPage = () => {
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <div className="sidebar-logo-icon" style={{ width: '48px', height: '48px', margin: '0 auto 1rem', fontSize: '1.25rem' }}>AI</div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', fontWeight: 800, color: 'var(--text-main)' }}>Welcome Back</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', marginTop: '0.25rem' }}>Sign in to continue your learning journey</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', marginTop: '0.25rem' }}>Sign in to continue your career learning journey</p>
         </div>
 
         <Card>
@@ -44,7 +48,7 @@ export const LoginPage = () => {
               error={errors.email?.message}
               {...register('email', {
                 required: 'Email address is required',
-                pattern: { value: /^\S+@\S+$/i, message: 'Invalid email address' },
+                pattern: { value: /^\S+@\S+$/i, message: 'Invalid email address format' },
               })}
             />
 
@@ -66,9 +70,9 @@ export const LoginPage = () => {
           </form>
 
           <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            Don't have an account?{' '}
+            Don't have an account yet?{' '}
             <Link to="/register" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
-              Register Now
+              Register Account
             </Link>
           </div>
         </Card>
