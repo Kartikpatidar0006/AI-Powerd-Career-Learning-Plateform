@@ -205,7 +205,7 @@ class CareerRoadmap(Base):
         back_populates="roadmap",
         cascade="all, delete-orphan",
         lazy="select",
-        order_by="RoadmapStep.step_order.asc()",
+        order_by="RoadmapStep.step_order",
     )
 
     # ── Dunder methods ────────────────────────────────────────────────────── #

@@ -120,15 +120,19 @@ from app.models.profession import Profession              # noqa: F401
 from app.models.skill import Skill                        # noqa: F401
 from app.models.learning_path import LearningPath         # noqa: F401
 from app.models.course import Course                      # noqa: F401
-from app.models.user_progress import UserProgress         # noqa: F401
 from app.models.career_roadmap import CareerRoadmap, RoadmapStep  # noqa: F401
+from app.models.user_progress import UserProgress         # noqa: F401
 #
 # Learning
-# from app.models.task import Task                          # noqa: F401
+from app.models.task import Task, TaskSubmission           # noqa: F401
+from app.models.task_feedback import TaskFeedback          # noqa: F401
 # from app.models.resume import Resume                      # noqa: F401
 #
 # Interviews
-# from app.models.interview import Interview                # noqa: F401
+from app.models.interview import Interview                # noqa: F401
+from app.models.interview_question import InterviewQuestion, InterviewAnswer  # noqa: F401
+from app.models.interview_feedback import InterviewFeedback # noqa: F401
+from app.models.notification import Notification            # noqa: F401
 #
 # AI / Sessions
 # from app.models.ai_session import AISession               # noqa: F401

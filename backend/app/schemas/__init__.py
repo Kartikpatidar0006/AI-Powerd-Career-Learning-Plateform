@@ -75,6 +75,49 @@ from app.schemas.career_roadmap import (
     RoadmapStepListResponse,
 )
 from app.schemas.skill_gap import SkillSummary, SkillGapAnalysis
+from app.schemas.task import (
+    TaskDifficulty,
+    SubmissionStatus,
+    TaskCreate,
+    TaskUpdate,
+    TaskResponse,
+    TaskListResponse,
+    TaskSubmissionCreate,
+    TaskSubmissionResponse,
+    TaskSubmissionListResponse,
+)
+from app.schemas.task_feedback import (
+    FeedbackStatus,
+    TaskFeedbackResponse,
+    TaskFeedbackListResponse,
+)
+from app.schemas.interview import (
+    InterviewStatus,
+    InterviewResponse,
+    InterviewListResponse,
+)
+from app.schemas.interview_question import (
+    QuestionType,
+    QuestionDifficulty,
+    InterviewAnswerCreate,
+    InterviewAnswerResponse,
+    InterviewQuestionResponse,
+    InterviewQuestionListResponse,
+    InterviewStartResponse,
+)
+from app.schemas.interview_feedback import (
+    InterviewFeedbackResponse as InterviewEvaluationFeedbackResponse,
+    InterviewFeedbackListResponse as InterviewEvaluationFeedbackListResponse,
+)
+from app.schemas.notification import (
+    NotificationType,
+    NotificationResponse,
+    NotificationListResponse,
+)
+from app.schemas.progress import (
+    UserOverallProgressResponse,
+    RoadmapProgressResponse,
+)
 
 __all__: list[str] = [
     # ── Auth request schemas ──────────────────────────────────────────── #
@@ -134,4 +177,37 @@ __all__: list[str] = [
     # ── AI Skill Gap schemas ───────────────────────────────────────────── #
     "SkillSummary",
     "SkillGapAnalysis",
+    # ── Task Engine schemas ────────────────────────────────────────────── #
+    "TaskDifficulty",
+    "SubmissionStatus",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskResponse",
+    "TaskListResponse",
+    "TaskSubmissionCreate",
+    "TaskSubmissionResponse",
+    "TaskSubmissionListResponse",
+    # ── Task Feedback schemas ─────────────────────────────────────────── #
+    "FeedbackStatus",
+    "TaskFeedbackResponse",
+    "TaskFeedbackListResponse",
+    # ── Interview schemas ─────────────────────────────────────────────── #
+    "InterviewStatus",
+    "InterviewResponse",
+    "InterviewListResponse",
+    "QuestionType",
+    "QuestionDifficulty",
+    "InterviewAnswerCreate",
+    "InterviewAnswerResponse",
+    "InterviewQuestionResponse",
+    "InterviewQuestionListResponse",
+    "InterviewStartResponse",
+    "InterviewEvaluationFeedbackResponse",
+    "InterviewEvaluationFeedbackListResponse",
+    # ── Notification & Progress schemas ──────────────────────────────── #
+    "NotificationType",
+    "NotificationResponse",
+    "NotificationListResponse",
+    "UserOverallProgressResponse",
+    "RoadmapProgressResponse",
 ]

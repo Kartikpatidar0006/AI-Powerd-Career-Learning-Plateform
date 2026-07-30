@@ -20,6 +20,25 @@ from app.services.career_roadmap import (
     RoadmapStepService,
 )
 from app.services.skill_gap import SkillGapError, SkillGapService
+from app.services.task import (
+    TaskError,
+    TaskService,
+    TaskSubmissionService,
+)
+from app.services.task_feedback import (
+    TaskFeedbackError,
+    TaskEvaluationService,
+    TaskFeedbackService,
+)
+from app.services.interview import (
+    InterviewError,
+    InterviewSchedulerService,
+    InterviewService,
+)
+from app.services.interview_engine import MockInterviewEngineService
+from app.services.interview_evaluation import InterviewEvaluationService
+from app.services.notification import NotificationError, NotificationService
+from app.services.progress import ProgressError, ProgressService
 
 __all__: list[str] = [
     "AuthService", "AuthError",
@@ -30,4 +49,11 @@ __all__: list[str] = [
     "UserProgressService", "UserProgressError",
     "CareerRoadmapService", "RoadmapStepService", "CareerRoadmapError",
     "SkillGapService", "SkillGapError",
+    "TaskService", "TaskSubmissionService", "TaskError",
+    "TaskEvaluationService", "TaskFeedbackService", "TaskFeedbackError",
+    "InterviewSchedulerService", "InterviewService", "InterviewError",
+    "MockInterviewEngineService",
+    "InterviewEvaluationService",
+    "NotificationService", "NotificationError",
+    "ProgressService", "ProgressError",
 ]

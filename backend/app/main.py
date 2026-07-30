@@ -464,10 +464,16 @@ def _register_routers(app: FastAPI) -> None:
 
     # ── ✅ Tasks ──────────────────────────────────────────────────────────── #
     from app.api.v1.tasks.router import router as tasks_router
+    from app.api.v1.tasks.feedback_router import router as feedback_router
     app.include_router(
         tasks_router,
         prefix=f"{prefix}/tasks",
         tags=["Tasks"],
+    )
+    app.include_router(
+        feedback_router,
+        prefix=prefix,
+        tags=["Task Feedback"],
     )
 
     # ── ✅ Auth ────────────────────────────────────────────────────────────── #
@@ -477,6 +483,10 @@ def _register_routers(app: FastAPI) -> None:
     # ── ✅ AI ──────────────────────────────────────────────────────────────── #
     from app.api.v1.ai.router import router as ai_router
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["AI"])
+
+    # ── ✅ Notifications ───────────────────────────────────────────────────── #
+    from app.api.v1.notifications.router import router as notifications_router
+    app.include_router(notifications_router, prefix=f"{prefix}/notifications", tags=["Notifications"])
 
     logger.debug(
         "Routers registered: auth, users, dashboard, interviews, professions,"

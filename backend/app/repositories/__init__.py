@@ -18,6 +18,18 @@ from app.repositories.career_roadmap import (
     CareerRoadmapRepository,
     RoadmapStepRepository,
 )
+from app.repositories.task import (
+    TaskRepository,
+    TaskSubmissionRepository,
+)
+from app.repositories.task_feedback import TaskFeedbackRepository
+from app.repositories.interview import InterviewRepository
+from app.repositories.interview_question import (
+    InterviewQuestionRepository,
+    InterviewAnswerRepository,
+)
+from app.repositories.interview_feedback import InterviewFeedbackRepository as InterviewEvaluationFeedbackRepository
+from app.repositories.notification import NotificationRepository
 
 __all__: list[str] = [
     "UserRepository",
@@ -28,5 +40,13 @@ __all__: list[str] = [
     "UserProgressRepository",
     "CareerRoadmapRepository",
     "RoadmapStepRepository",
+    "TaskRepository",
+    "TaskSubmissionRepository",
+    "TaskFeedbackRepository",
+    "InterviewRepository",
+    "InterviewQuestionRepository",
+    "InterviewAnswerRepository",
+    "InterviewEvaluationFeedbackRepository",
+    "NotificationRepository",
 ]
 

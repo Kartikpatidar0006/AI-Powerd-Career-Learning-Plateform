@@ -147,6 +147,30 @@ class UserProgress(Base):
         comment="FK → skills.id. Progress is deleted when the skill is deleted.",
     )
 
+    current_step_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("roadmap_steps.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="FK → roadmap_steps.id. Current roadmap step being pursued.",
+    )
+
+    completed_tasks: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Cumulative count of completed tasks.",
+    )
+
+    completed_interviews: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Cumulative count of completed interviews.",
+    )
+
     # ── Status ───────────────────────────────────────────────────────────── #
     status: Mapped[str] = mapped_column(
         String(20),
