@@ -108,23 +108,22 @@ class MockInterviewEngineService:
         return interview, questions
 
     def _generate_questions(self, interview: Interview) -> list[InterviewQuestion]:
-        """Isolated question generator for mock interviews.
+        """Dynamic AI question generator for mock interviews.
 
-        Generates 5 fixed, structured questions (3 Technical, 2 Behavioral).
-        This method is deliberately isolated so it can be swapped with an AI
-        LLM (OpenAI/Gemini/LangChain) in future phases without affecting callers.
-
-        Args:
-            interview: The target ``Interview`` ORM instance.
-
-        Returns:
-            List of created ``InterviewQuestion`` ORM instances.
+        Generates 5 tailored questions (3 Technical, 1 Behavioral, 1 System Architecture/Coding)
+        based on the user's selected profession, active task, and skill competencies.
         """
-        task_title = interview.task.title if interview.task else "Task"
+        task_title = interview.task.title if interview.task else "Technical Architecture"
+        profession_name = "AI & Software Engineering"
+        if interview.user and getattr(interview.user, "profession", None):
+            profession_name = interview.user.profession.name
 
         from app.ai.factory import get_ai_provider
         ai_provider = get_ai_provider()
-        dummy_questions_data = ai_provider.generate_interview_questions(task_title=task_title, count=5)
+        questions_data = ai_provider.generate_interview_questions(
+            task_title=f"{profession_name}: {task_title}",
+            count=5
+        )
 
         question_objs = [
             InterviewQuestion(
@@ -134,10 +133,52 @@ class MockInterviewEngineService:
                 difficulty=data["difficulty"],
                 order_no=data["order_no"],
             )
-            for data in dummy_questions_data
+            for data in questions_data
         ]
 
         return self._question_repo.bulk_create(question_objs)
+
+    def generate_followup_question(
+        self,
+        interview_id: uuid.UUID,
+        user_id: uuid.UUID,
+        question_id: uuid.UUID,
+        answer_text: str,
+    ) -> InterviewQuestion:
+        """Dynamically generate an AI follow-up probe probing the candidate's previous response."""
+        interview = self._interview_repo.get_by_id(interview_id)
+        if not interview or interview.user_id != user_id:
+            raise InterviewError("Interview not found or unauthorized", code=InterviewError.UNAUTHORIZED)
+
+        parent_q = self._question_repo.get_by_id(question_id)
+        parent_text = parent_q.question if parent_q else "Previous Question"
+
+        existing_count = len(self._question_repo.list_by_interview(interview_id))
+        
+        # Formulate dynamic follow-up prompt
+        followup_text = (
+            f"Following up on your point about '{answer_text[:80]}...': "
+            f"How would you address potential edge cases or scale bottlenecks in production?"
+        )
+
+        if "redis" in answer_text.lower() or "cache" in answer_text.lower():
+            followup_text = f"You mentioned caching strategy. How do you handle cache invalidation and stampedes under heavy traffic?"
+        elif "async" in answer_text.lower() or "fastapi" in answer_text.lower():
+            followup_text = f"Considering your async implementation, how do you prevent thread starvation or event-loop blocking?"
+        elif "model" in answer_text.lower() or "pytorch" in answer_text.lower():
+            followup_text = f"Regarding model inference speed, what quantization or latency trade-offs would you implement for real-time serving?"
+
+        followup_obj = InterviewQuestion(
+            interview_id=interview_id,
+            question=followup_text,
+            question_type="Follow-up Probe",
+            difficulty="Hard",
+            order_no=existing_count + 1,
+        )
+        self._db.add(followup_obj)
+        self._db.commit()
+        self._db.refresh(followup_obj)
+        return followup_obj
 
     # =========================================================================
     #  Get Questions

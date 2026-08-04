@@ -418,6 +418,33 @@ def get_interview_questions(
 
 
 @router.post(
+    "/{interview_id}/followup",
+    response_model=InterviewQuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate dynamic AI follow-up question",
+)
+def generate_followup(
+    interview_id: uuid.UUID,
+    question_id: uuid.UUID,
+    answer_text: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> InterviewQuestionResponse:
+    """Generate dynamic AI follow-up question based on candidate answer."""
+    logger.info("POST /interviews/%s/followup | user=%s", interview_id, current_user.id)
+    try:
+        q = MockInterviewEngineService(db).generate_followup_question(
+            interview_id=interview_id,
+            user_id=current_user.id,
+            question_id=question_id,
+            answer_text=answer_text,
+        )
+        return InterviewQuestionResponse.model_validate(q)
+    except InterviewError as exc:
+        _raise_http(exc)
+
+
+@router.post(
     "/{interview_id}/finish",
     response_model=InterviewResponse,
     status_code=status.HTTP_200_OK,

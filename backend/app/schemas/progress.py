@@ -41,6 +41,8 @@ class UserOverallProgressResponse(BaseModel):
     total_skills_completed: int
     total_skills_in_progress: int
     overall_progress_percentage: float = Field(..., ge=0.0, le=100.0)
+    study_streak: int = 0
+    job_readiness_score: int = 0
 
 
 class RoadmapProgressResponse(BaseModel):

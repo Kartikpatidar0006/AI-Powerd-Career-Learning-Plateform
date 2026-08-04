@@ -23,6 +23,7 @@ import InterviewFeedbackPage from '../pages/InterviewFeedbackPage';
 import ProgressPage from '../pages/ProgressPage';
 import NotificationPage from '../pages/NotificationPage';
 import ProfilePage from '../pages/ProfilePage';
+import OnboardingPage from '../pages/OnboardingPage';
 import NotFoundPage from '../pages/NotFoundPage';
 
 export const AppRoutes = () => {
@@ -35,6 +36,11 @@ export const AppRoutes = () => {
       <Route element={<PublicRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+      </Route>
+
+      {/* Protected Standalone Routes */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/onboarding" element={<OnboardingPage />} />
       </Route>
 
       {/* Protected Student Layout Routes */}

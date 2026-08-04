@@ -348,6 +348,30 @@ class UserResponse(BaseModel):
         description="UUID of the assigned role, or null if no role assigned.",
         examples=[None],
     )
+    profession_id: Optional[uuid.UUID] = Field(
+        default=None,
+        description="UUID of the selected career profession.",
+    )
+    onboarding_completed: bool = Field(
+        default=False,
+        description="True if user has completed onboarding profile & assessment.",
+    )
+    assessment_score: int = Field(
+        default=0,
+        description="Scored assessment points.",
+    )
+    ai_match_percentage: int = Field(
+        default=0,
+        description="Computed AI match confidence score (0-100).",
+    )
+    daily_study_time: Optional[str] = Field(
+        default=None,
+        description="User daily study commitment.",
+    )
+    experience_level: Optional[str] = Field(
+        default=None,
+        description="User current experience level.",
+    )
     is_active: bool = Field(
         ...,
         description="False if the account has been suspended (soft-deleted).",

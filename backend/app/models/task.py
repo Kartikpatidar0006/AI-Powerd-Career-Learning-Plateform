@@ -360,6 +360,12 @@ class TaskSubmission(Base):
         comment="URL to an uploaded file (S3 or local storage).",
     )
 
+    deployment_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL to live deployed project instance.",
+    )
+
     # ── Status ───────────────────────────────────────────────────────────── #
     status: Mapped[str] = mapped_column(
         String(20),

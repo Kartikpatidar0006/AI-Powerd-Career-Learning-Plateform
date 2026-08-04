@@ -42,6 +42,13 @@ const interviewService = {
     return response.data;
   },
 
+  generateFollowup: async (interviewId, questionId, answerText) => {
+    const response = await api.post(`/interviews/${interviewId}/followup`, null, {
+      params: { question_id: questionId, answer_text: answerText },
+    });
+    return response.data;
+  },
+
   evaluateInterview: async (interviewId) => {
     const response = await api.post(ENDPOINTS.EVALUATE_INTERVIEW(interviewId));
     return response.data;

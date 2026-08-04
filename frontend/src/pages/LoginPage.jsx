@@ -23,7 +23,7 @@ export const LoginPage = () => {
         email: data.email,
         password: data.password,
       });
-      navigate('/dashboard');
+      navigate('/onboarding');
     } catch {
       // Error toast message handled by AuthContext
     }

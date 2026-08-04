@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { Code, FileText, Send } from 'lucide-react';
+import { Code, FileText, Send, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/PageHeader/PageHeader';
 import Card from '../components/Card/Card';
@@ -26,12 +26,12 @@ export const TaskSubmissionPage = () => {
       setSubmitting(true);
       const res = await taskService.submitTask(taskId, data);
       toast.success('Task submitted successfully!');
-      
+
       // Auto trigger evaluation if submission created
       if (res && res.id) {
         try {
           await taskService.evaluateSubmission(res.id);
-        } catch (evalErr) {
+        } catch {
           // Silent evaluation fallback
         }
       }
@@ -47,7 +47,7 @@ export const TaskSubmissionPage = () => {
     <div>
       <PageHeader
         title="Submit Task Solution"
-        description="Submit your solution for automated AI evaluation and feedback."
+        description="Provide your GitHub repository link and live deployment URL for automated AI evaluation and roadmap milestone progression."
         breadcrumbs={[{ label: 'Tasks', path: '/tasks' }, { label: 'Submit Solution' }]}
       />
 
@@ -55,7 +55,7 @@ export const TaskSubmissionPage = () => {
         <Card>
           <form onSubmit={handleSubmit(onSubmit)}>
             <Input
-              label="GitHub Repository URL (Optional)"
+              label="GitHub Repository URL"
               type="url"
               placeholder="https://github.com/your-username/your-repo"
               icon={Code}
@@ -63,17 +63,26 @@ export const TaskSubmissionPage = () => {
               {...register('github_url')}
             />
 
+            <Input
+              label="Live Deployment URL (Optional)"
+              type="url"
+              placeholder="https://your-app.vercel.app or https://api.railway.app"
+              icon={Globe}
+              error={errors.deployment_url?.message}
+              {...register('deployment_url')}
+            />
+
             <Textarea
-              label="Submission Explanation / Code Snippets"
-              placeholder="Detail your implementation, architecture decisions, and code solution here..."
+              label="Submission Explanation / Implementation Notes"
+              placeholder="Detail your architecture choices, database schema design, and setup instructions..."
               rows={6}
               error={errors.submission_text?.message}
               {...register('submission_text')}
             />
 
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.25rem' }}>
               <Button type="submit" variant="primary" size="lg" isLoading={submitting} icon={Send}>
-                Submit for AI Evaluation
+                Submit Solution for AI Evaluation
               </Button>
               <Button variant="secondary" size="lg" onClick={() => navigate(`/tasks/${taskId}`)}>
                 Cancel

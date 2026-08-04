@@ -261,13 +261,18 @@ class TaskSubmissionCreate(BaseModel):
         max_length=2000,
         description="URL to an uploaded file (S3 or local storage).",
     )
+    deployment_url: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="URL to live deployed application instance.",
+    )
 
     @model_validator(mode="after")
     def at_least_one_deliverable(self) -> Self:
         """Ensure at least one deliverable field is provided."""
-        if not self.github_url and not self.submission_text and not self.file_url:
+        if not self.github_url and not self.submission_text and not self.file_url and not self.deployment_url:
             raise ValueError(
-                "At least one of github_url, submission_text, or file_url "
+                "At least one of github_url, submission_text, file_url, or deployment_url "
                 "must be provided."
             )
         return self
@@ -283,6 +288,7 @@ class TaskSubmissionResponse(BaseModel):
         github_url: GitHub repository URL (may be null).
         submission_text: Free-text answer (may be null).
         file_url: Uploaded file URL (may be null).
+        deployment_url: Live deployment URL (may be null).
         status: Lifecycle status string.
         submitted_at: Submission creation timestamp.
         updated_at: Last modification timestamp.

@@ -222,6 +222,9 @@ class ProgressService:
         )
         avg_pct = self._db.execute(avg_pct_stmt).scalar() or 0.0
 
+        study_streak = self.calculate_user_streak(user_id)
+        job_readiness_score = min(100, int((completed_tasks * 15) + (completed_interviews * 20) + (total_skills_completed * 10)))
+
         return UserOverallProgressResponse(
             user_id=user_id,
             completed_tasks=completed_tasks,
@@ -229,7 +232,40 @@ class ProgressService:
             total_skills_completed=total_skills_completed,
             total_skills_in_progress=total_skills_in_progress,
             overall_progress_percentage=round(float(avg_pct), 2),
+            study_streak=study_streak,
+            job_readiness_score=job_readiness_score,
         )
+
+    def calculate_user_streak(self, user_id: uuid.UUID) -> int:
+        """Calculate dynamic consecutive daily study streak from UserActivity records."""
+        from datetime import date, timedelta
+        from app.models.user_activity import UserActivity
+
+        stmt = (
+            select(func.date(UserActivity.created_at))
+            .where(UserActivity.user_id == user_id)
+            .group_by(func.date(UserActivity.created_at))
+            .order_by(func.date(UserActivity.created_at).desc())
+        )
+        activity_dates = [d for d in self._db.execute(stmt).scalars().all() if d is not None]
+        if not activity_dates:
+            return 0
+
+        today = date.today()
+        latest_date = activity_dates[0]
+        if latest_date < today - timedelta(days=1):
+            return 0
+
+        streak = 0
+        expected_date = latest_date
+        for act_date in activity_dates:
+            if act_date == expected_date:
+                streak += 1
+                expected_date -= timedelta(days=1)
+            else:
+                break
+
+        return streak
 
     def get_roadmap_progress(
         self,

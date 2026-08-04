@@ -111,6 +111,7 @@ class Base(DeclarativeBase):
 #
 # Auth / Users
 from app.models.user import User                          # noqa: F401
+from app.models.user_activity import UserActivity          # noqa: F401
 
 # Roles
 from app.models.role import Role                            # noqa: F401

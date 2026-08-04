@@ -65,8 +65,10 @@ class DashboardService:
         profession_id = getattr(user, "profession_id", None)
         profession = self._db.get(Profession, profession_id) if profession_id else None
 
-        # Roadmap (Active roadmap for profession or first active)
+        # Roadmap (Active roadmap for assigned profession only)
         roadmap = None
+        current_task = None
+
         if profession_id:
             rm_stmt = (
                 select(CareerRoadmap)
@@ -75,14 +77,17 @@ class DashboardService:
             )
             roadmap = self._db.execute(rm_stmt).scalars().first()
 
-        if not roadmap:
-            rm_stmt = select(CareerRoadmap).where(CareerRoadmap.is_active == True).limit(1)  # noqa: E712
-            roadmap = self._db.execute(rm_stmt).scalars().first()
-
-        # Current Task
-        current_task = None
-        task_stmt = select(Task).where(Task.is_active == True).order_by(Task.order_no.asc()).limit(1)  # noqa: E712
-        current_task = self._db.execute(task_stmt).scalars().first()
+            if roadmap:
+                # Fetch first active task under roadmap's steps
+                task_stmt = (
+                    select(Task)
+                    .join(RoadmapStep, Task.roadmap_step_id == RoadmapStep.id)
+                    .where(RoadmapStep.roadmap_id == roadmap.id)
+                    .where(Task.is_active == True)  # noqa: E712
+                    .order_by(RoadmapStep.step_order.asc(), Task.order_no.asc())
+                    .limit(1)
+                )
+                current_task = self._db.execute(task_stmt).scalars().first()
 
         # Latest Task Feedback
         latest_task_fb = None

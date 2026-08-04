@@ -201,6 +201,43 @@ class User(Base):
         ),
     )
 
+    profession_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("professions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    assessment_score: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    ai_match_percentage: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    daily_study_time: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    experience_level: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
     # ── Full name ─────────────────────────────────────────────────────────── #
     # Display name for UI rendering.  Not a login identifier.
     # VARCHAR(255) covers the widest realistic personal name including
