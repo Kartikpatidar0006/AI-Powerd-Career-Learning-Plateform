@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Menu, User, LogOut, Search } from 'lucide-react';
+import { Bell, Menu, User, LogOut, Search, Sun } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../hooks/useAuth';
 import { getInitials } from '../../utils/formatters';
 
@@ -46,6 +47,19 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
       </div>
 
       <div className="navbar-user-menu">
+        {/* Dark / Light Mode Toggle Button */}
+        <button
+          onClick={() => {
+            const isDark = document.body.classList.toggle('dark-theme');
+            toast.success(isDark ? '🌙 Dark Mode Activated' : '☀️ Light Mode Activated');
+          }}
+          className="notif-btn"
+          title="Toggle Light/Dark Theme"
+          style={{ cursor: 'pointer' }}
+        >
+          <Sun size={18} className="theme-icon-light" />
+        </button>
+
         <button
           onClick={() => navigate('/notifications')}
           className="notif-btn"
@@ -78,8 +92,8 @@ export const Navbar = ({ onToggleSidebar, unreadCount = 0 }) => {
                 right: 0,
                 top: '50px',
                 width: '220px',
-                background: 'var(--bg-sidebar)',
-                border: '1px solid var(--border-light)',
+                background: '#FFFFFF',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-md)',
                 boxShadow: 'var(--shadow-lg)',
                 padding: '0.5rem',

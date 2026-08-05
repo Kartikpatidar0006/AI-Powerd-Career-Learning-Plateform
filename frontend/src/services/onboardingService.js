@@ -148,7 +148,7 @@ export const onboardingService = {
         duration: 'Weeks 1-4',
         skills: profession.skills.slice(0, 3),
         status: 'In Progress',
-        progressPercent: 35,
+        progressPercent: 0,
         topics: [
           'Environment Setup & CLI Tools',
           'Core Programming Logic & Syntax',

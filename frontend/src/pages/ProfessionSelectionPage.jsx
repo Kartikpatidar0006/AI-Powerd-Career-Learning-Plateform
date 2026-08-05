@@ -35,31 +35,17 @@ export const ProfessionSelectionPage = () => {
         const apiData = await professionService.getProfessions();
         const apiItems = Array.isArray(apiData) ? apiData : apiData.items || [];
 
-        // Merge API data with full catalog of 14+ professions to guarantee at least 14-15 career cards
+        // Populate catalog items restricted to Machine Learning Engineer and Frontend Developer
         const mergedMap = new Map();
 
-        // 1. Populate catalog items first
         PROFESSION_CATALOG.forEach((item) => {
           mergedMap.set(item.slug, item);
         });
 
-        // 2. Override/enrich with API items if available
         apiItems.forEach((apiItem) => {
           const key = apiItem.slug || apiItem.name?.toLowerCase().replace(/\s+/g, '-');
           if (mergedMap.has(key)) {
             mergedMap.set(key, { ...mergedMap.get(key), ...apiItem });
-          } else {
-            mergedMap.set(key, {
-              id: apiItem.id,
-              slug: key,
-              title: apiItem.name || apiItem.title,
-              name: apiItem.name || apiItem.title,
-              category: apiItem.category || 'Tech Specialization',
-              description: apiItem.description || 'Master key skills and hands-on projects for this specialization.',
-              skills: apiItem.required_skills || ['Python', 'SQL', 'Git'],
-              estimatedDuration: '14 Weeks',
-              difficulty: 'Intermediate',
-            });
           }
         });
 
@@ -74,8 +60,8 @@ export const ProfessionSelectionPage = () => {
     fetchProfessions();
   }, []);
 
-  // Filter logic
-  const categories = ['All', 'AI & Machine Learning', 'Software Engineering', 'Data & Analytics', 'Cloud & Infrastructure', 'Security & Systems'];
+  // Filter categories
+  const categories = ['All', 'AI & Machine Learning', 'Software Engineering'];
 
   const filteredProfessions = professions.filter((prof) => {
     const matchesSearch =
@@ -102,7 +88,8 @@ export const ProfessionSelectionPage = () => {
     navigate(`/roadmaps?profession_id=${prof.id || prof.slug}`);
   };
 
-  if (loading) return <Loader label="Loading 14+ career professions..." />;
+  if (loading) return <Loader label="Loading featured career professions..." />;
+
 
   return (
     <div>

@@ -53,10 +53,14 @@ export const AppRoutes = () => {
           <Route path="/tasks" element={<TaskListPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailsPage />} />
           <Route path="/tasks/:taskId/submit" element={<TaskSubmissionPage />} />
+          <Route path="/task/:taskId" element={<TaskDetailsPage />} />
+          <Route path="/task/:taskId/submit" element={<TaskSubmissionPage />} />
           <Route path="/feedback/:taskId" element={<TaskFeedbackPage />} />
           <Route path="/interviews" element={<InterviewListPage />} />
           <Route path="/interviews/:interviewId" element={<InterviewPage />} />
           <Route path="/interviews/:interviewId/feedback" element={<InterviewFeedbackPage />} />
+          <Route path="/interview" element={<InterviewPage />} />
+          <Route path="/interview/:interviewId" element={<InterviewPage />} />
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/notifications" element={<NotificationPage />} />
           <Route path="/profile" element={<ProfilePage />} />
