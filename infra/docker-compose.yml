@@ -1,0 +1,384 @@
+# ===========================================================================
+# infra/docker-compose.yml
+# -------------------------
+# Full local development stack for the AI Career Hub microservices platform.
+#
+# Services started:
+#   • 6 Postgres databases (one per stateful service)
+#   • 1 RabbitMQ message broker
+#   • API Gateway          → http://localhost:8000
+#   • Auth Service         → http://localhost:8001
+#   • Catalog Service      → http://localhost:8002
+#   • Learning Service     → http://localhost:8003
+#   • Interview Service    → http://localhost:8004
+#   • Progress Service     → http://localhost:8005
+#   • Notification Service → http://localhost:8006
+#   • Dashboard BFF        → http://localhost:8007
+#   • pgAdmin (optional)   → http://localhost:5050  (profile: tools)
+#   • RabbitMQ UI          → http://localhost:15672
+#
+# Usage:
+#   Start all:          docker compose up -d
+#   Stop all:           docker compose down
+#   Stop + wipe data:   docker compose down -v
+#   Start with tools:   docker compose --profile tools up -d
+#   View logs:          docker compose logs -f <service>
+# ===========================================================================
+
+x-postgres-common: &postgres-common
+  image: postgres:16-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 10s
+
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────── #
+
+  postgres-auth:
+    <<: *postgres-common
+    container_name: career_postgres_auth
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_auth
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  postgres-catalog:
+    <<: *postgres-common
+    container_name: career_postgres_catalog
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_catalog
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_catalog_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  postgres-learning:
+    <<: *postgres-common
+    container_name: career_postgres_learning
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_learning
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_learning_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  postgres-interview:
+    <<: *postgres-common
+    container_name: career_postgres_interview
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_interview
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_interview_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  postgres-progress:
+    <<: *postgres-common
+    container_name: career_postgres_progress
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_progress
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_progress_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  postgres-notif:
+    <<: *postgres-common
+    container_name: career_postgres_notif
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_notifications
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_notif_data:/var/lib/postgresql/data
+    networks:
+      - career-platform-net
+
+  # ── Message Broker ─────────────────────────────────────────────────────── #
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: career_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: career
+      RABBITMQ_DEFAULT_PASS: career
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI -> http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - career-platform-net
+
+  # ── API Gateway ────────────────────────────────────────────────────────── #
+
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    container_name: career_gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../gateway/.env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CATALOG_SERVICE_URL: http://catalog-service:8002
+      LEARNING_SERVICE_URL: http://learning-service:8003
+      INTERVIEW_SERVICE_URL: http://interview-service:8004
+      PROGRESS_SERVICE_URL: http://progress-service:8005
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+      DASHBOARD_SERVICE_URL: http://dashboard-bff:8007
+    depends_on:
+      - auth-service
+      - catalog-service
+      - learning-service
+      - interview-service
+      - progress-service
+      - notification-service
+      - dashboard-bff
+    networks:
+      - career-platform-net
+
+  # ── Auth Service ───────────────────────────────────────────────────────── #
+
+  auth-service:
+    build:
+      context: ../services/auth-service
+      dockerfile: Dockerfile
+    container_name: career_auth_service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - ../services/auth-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-auth
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_auth
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Catalog Service ────────────────────────────────────────────────────── #
+
+  catalog-service:
+    build:
+      context: ../services/catalog-service
+      dockerfile: Dockerfile
+    container_name: career_catalog_service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file:
+      - ../services/catalog-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-catalog
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_catalog
+    depends_on:
+      postgres-catalog:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Learning Service ───────────────────────────────────────────────────── #
+
+  learning-service:
+    build:
+      context: ../services/learning-service
+      dockerfile: Dockerfile
+    container_name: career_learning_service
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    env_file:
+      - ../services/learning-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-learning
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_learning
+      RABBITMQ_URL: amqp://career:career@rabbitmq:5672/
+    depends_on:
+      postgres-learning:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Interview Service ──────────────────────────────────────────────────── #
+
+  interview-service:
+    build:
+      context: ../services/interview-service
+      dockerfile: Dockerfile
+    container_name: career_interview_service
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    env_file:
+      - ../services/interview-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-interview
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_interview
+      RABBITMQ_URL: amqp://career:career@rabbitmq:5672/
+    depends_on:
+      postgres-interview:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Progress Service ───────────────────────────────────────────────────── #
+
+  progress-service:
+    build:
+      context: ../services/progress-service
+      dockerfile: Dockerfile
+    container_name: career_progress_service
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - ../services/progress-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-progress
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_progress
+    depends_on:
+      postgres-progress:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Notification Service ───────────────────────────────────────────────── #
+
+  notification-service:
+    build:
+      context: ../services/notification-service
+      dockerfile: Dockerfile
+    container_name: career_notification_service
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    env_file:
+      - ../services/notification-service/.env
+    environment:
+      POSTGRES_SERVER: postgres-notif
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: career_notifications
+      RABBITMQ_URL: amqp://career:career@rabbitmq:5672/
+    depends_on:
+      postgres-notif:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - career-platform-net
+
+  # ── Dashboard BFF ──────────────────────────────────────────────────────── #
+
+  dashboard-bff:
+    build:
+      context: ../services/dashboard-bff
+      dockerfile: Dockerfile
+    container_name: career_dashboard_bff
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    env_file:
+      - ../services/dashboard-bff/.env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CATALOG_SERVICE_URL: http://catalog-service:8002
+      LEARNING_SERVICE_URL: http://learning-service:8003
+      INTERVIEW_SERVICE_URL: http://interview-service:8004
+      PROGRESS_SERVICE_URL: http://progress-service:8005
+      NOTIFICATION_SERVICE_URL: http://notification-service:8006
+    depends_on:
+      - auth-service
+      - catalog-service
+      - learning-service
+      - interview-service
+      - progress-service
+      - notification-service
+    networks:
+      - career-platform-net
+
+  # ── Optional Tools ─────────────────────────────────────────────────────── #
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: career_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    profiles:
+      - tools
+    networks:
+      - career-platform-net
+
+
+# ── Named volumes ──────────────────────────────────────────────────────────── #
+volumes:
+  postgres_auth_data:
+  postgres_catalog_data:
+  postgres_learning_data:
+  postgres_interview_data:
+  postgres_progress_data:
+  postgres_notif_data:
+  rabbitmq_data:
+  pgadmin_data:
+
+# ── Networks ───────────────────────────────────────────────────────────────── #
+networks:
+  career-platform-net:
+    driver: bridge

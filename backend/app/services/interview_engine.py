@@ -110,19 +110,38 @@ class MockInterviewEngineService:
     def _generate_questions(self, interview: Interview) -> list[InterviewQuestion]:
         """Dynamic AI question generator for mock interviews.
 
-        Generates 5 tailored questions (3 Technical, 1 Behavioral, 1 System Architecture/Coding)
-        based on the user's selected profession, active task, and skill competencies.
+        Generates 5 tailored questions based on the user's selected profession, active task,
+        and submitted GitHub repository code.
         """
         task_title = interview.task.title if interview.task else "Technical Architecture"
         profession_name = "AI & Software Engineering"
         if interview.user and getattr(interview.user, "profession", None):
             profession_name = interview.user.profession.name
 
+        # Check for submitted GitHub repository URL from latest task submission
+        github_url = None
+        if interview.task_id and interview.user_id:
+            from app.models.task import TaskSubmission
+            from sqlalchemy import select
+            sub_stmt = (
+                select(TaskSubmission.github_url)
+                .where(TaskSubmission.task_id == interview.task_id)
+                .where(TaskSubmission.user_id == interview.user_id)
+                .order_no(TaskSubmission.created_at.desc()) if hasattr(TaskSubmission, 'created_at') else select(TaskSubmission.github_url).where(TaskSubmission.task_id == interview.task_id).where(TaskSubmission.user_id == interview.user_id)
+            )
+            try:
+                sub_res = self._db.execute(select(TaskSubmission.github_url).where(TaskSubmission.task_id == interview.task_id).where(TaskSubmission.user_id == interview.user_id)).scalars().first()
+                if sub_res:
+                    github_url = sub_res
+            except Exception as e:
+                logger.warning("Could not query TaskSubmission for github_url: %s", e)
+
         from app.ai.factory import get_ai_provider
         ai_provider = get_ai_provider()
         questions_data = ai_provider.generate_interview_questions(
             task_title=f"{profession_name}: {task_title}",
-            count=5
+            count=5,
+            github_url=github_url,
         )
 
         question_objs = [

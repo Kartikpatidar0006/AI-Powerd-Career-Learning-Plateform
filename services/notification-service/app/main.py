@@ -1,0 +1,112 @@
+"""
+services/notification-service/app/main.py
+-------------------------------------------
+FastAPI entrypoint for the Notification Service.
+Handles: Notification CRUD for users.
+Also runs a RabbitMQ consumer thread for event-driven notification creation.
+"""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.core.config import settings
+from app.db.init_db import initialize_database
+
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+def _start_consumer_thread() -> None:
+    """Start the RabbitMQ consumer in a daemon thread alongside uvicorn."""
+    try:
+        from app.events.consumer import start_consumer
+        thread = threading.Thread(target=start_consumer, daemon=True, name="rabbitmq-consumer")
+        thread.start()
+        logger.info("RabbitMQ consumer thread started.")
+    except Exception as exc:
+        logger.warning(
+            "RabbitMQ consumer thread failed to start (non-fatal — REST API still works): %s", exc
+        )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    logger.info("🔔  %s v%s starting...", settings.PROJECT_NAME, settings.PROJECT_VERSION)
+    initialize_database()
+    _start_consumer_thread()
+    logger.info("✓  Notification Service ready.")
+    yield
+    logger.info("Notification Service shutdown.")
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.PROJECT_VERSION,
+    description="Notification microservice: event-driven user notifications.",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    redoc_url=f"{settings.API_V1_STR}/redoc",
+    lifespan=lifespan,
+    debug=settings.DEBUG,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def request_timing(request: Request, call_next: Any) -> Any:
+    start = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter()-start)*1000:.3f}"
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"success": False, "error": {"code": 422, "type": "ValidationError", "message": "Validation failed.", "detail": exc.errors()}})
+
+
+@app.exception_handler(HTTPException)
+async def http_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, headers=exc.headers, content={"success": False, "error": {"code": exc.status_code, "type": "HTTPException", "message": exc.detail, "detail": None}})
+
+
+@app.exception_handler(Exception)
+async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("Unhandled: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"success": False, "error": {"code": 500, "type": "InternalServerError", "message": "Internal error.", "detail": None}})
+
+
+# ── Routers ────────────────────────────────────────────────────────────────── #
+from app.api.v1.notifications.router import router as notifications_router  # noqa: E402
+
+prefix = settings.API_V1_STR
+app.include_router(notifications_router, prefix=f"{prefix}/notifications", tags=["Notifications"])
+
+
+@app.get("/", tags=["Root"])
+async def root() -> JSONResponse:
+    return JSONResponse(content={"application": settings.PROJECT_NAME, "version": settings.PROJECT_VERSION})
+
+
+@app.get("/health", tags=["Health"])
+async def health_check() -> JSONResponse:
+    return JSONResponse(content={"status": "healthy", "application": settings.PROJECT_NAME})
