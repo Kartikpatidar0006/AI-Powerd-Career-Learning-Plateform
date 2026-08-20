@@ -27,7 +27,7 @@ export const RegisterPage = () => {
         email: data.email,
         password: data.password,
       });
-      navigate('/login');
+      navigate('/onboarding');
     } catch {
       // Error toast message handled by AuthContext
     }
