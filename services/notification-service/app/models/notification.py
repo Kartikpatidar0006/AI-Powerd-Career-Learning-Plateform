@@ -127,12 +127,6 @@ class Notification(Base):
         comment="UTC timestamp of creation.",
     )
 
-    # ── Relationships ─────────────────────────────────────────────────────── #
-    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User",
-        lazy="select",
-    )
-
     def __repr__(self) -> str:
         return (
             f"Notification("

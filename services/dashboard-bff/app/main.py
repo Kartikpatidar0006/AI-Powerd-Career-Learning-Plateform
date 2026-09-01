@@ -67,15 +67,17 @@ app.add_middleware(
 @app.middleware("http")
 async def jwt_middleware(request: Request, call_next: Any) -> Any:
     """Validate Bearer JWT for all non-public paths."""
-    if request.url.path not in _PUBLIC_PATHS:
+    if request.url.path not in _PUBLIC_PATHS and request.method != "OPTIONS":
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth.removeprefix("Bearer ").strip()
             try:
                 payload = decode_token(token)
                 request.state.jwt_payload = payload
-            except HTTPException:
-                raise
+            except HTTPException as exc:
+                return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            except Exception:
+                return JSONResponse(status_code=401, content={"detail": "Invalid token."})
     return await call_next(request)
 
 

@@ -285,11 +285,6 @@ class InterviewAnswer(Base):
         lazy="select",
     )
 
-    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User",
-        lazy="select",
-    )
-
     def __repr__(self) -> str:
         return (
             f"InterviewAnswer("

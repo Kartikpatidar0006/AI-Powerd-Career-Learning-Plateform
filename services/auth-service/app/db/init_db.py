@@ -32,11 +32,11 @@ def _ensure_postgres_db_exists() -> None:
 
 def initialize_database() -> None:
     try:
-        _ensure_postgres_db_exists()
-        if check_db_connection():
-            Base.metadata.create_all(bind=engine)
-            logger.info("Database tables created/verified ✓")
-        else:
-            logger.warning("Database offline — service starting without DB auto-creation.")
+        if "postgresql" in str(engine.url):
+            _ensure_postgres_db_exists()
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified ✓")
+        from app.db.seed import seed_auth_data
+        seed_auth_data()
     except Exception as exc:
         logger.warning("Database initialization note: %s", exc)

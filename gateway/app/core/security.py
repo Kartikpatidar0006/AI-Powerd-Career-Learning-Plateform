@@ -37,12 +37,23 @@ PUBLIC_PATHS: set[str] = {
 }
 
 
-def _is_public(path: str) -> bool:
+from fastapi.responses import JSONResponse
+
+def _is_public(path: str, method: str = "GET") -> bool:
     """Return True if this path does not require authentication."""
     if path in PUBLIC_PATHS:
         return True
     # Allow docs sub-paths
     if path.startswith(("/api/v1/docs", "/api/v1/redoc", "/openapi")):
+        return True
+    # Allow public catalog read endpoints
+    if method in ("GET", "HEAD") and (
+        path.startswith("/api/v1/professions")
+        or path.startswith("/api/v1/skills")
+        or path.startswith("/api/v1/career-roadmaps")
+        or path.startswith("/api/v1/roadmap-steps")
+        or path.startswith("/api/v1/courses")
+    ):
         return True
     return False
 
@@ -50,11 +61,6 @@ def _is_public(path: str) -> bool:
 def decode_token(token: str) -> dict[str, Any]:
     """
     Decode and validate the JWT, returning its payload.
-
-    Raises
-    ------
-    HTTPException(401)
-        If the token is missing, expired, or has an invalid signature.
     """
     try:
         payload: dict[str, Any] = jwt.decode(
@@ -76,25 +82,42 @@ def decode_token(token: str) -> dict[str, Any]:
 async def validate_jwt_middleware(request: Request, call_next: Any) -> Any:
     """
     ASGI middleware that validates Bearer JWT for every non-public route.
-
-    On success, the decoded payload is attached to `request.state.jwt_payload`
-    so downstream proxy handlers can forward claims to services if needed.
     """
     path = request.url.path
 
-    if request.method == "OPTIONS" or _is_public(path):
+    if request.method == "OPTIONS" or _is_public(path, request.method):
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.removeprefix("Bearer ").strip()
+            try:
+                request.state.jwt_payload = decode_token(token)
+            except Exception:
+                pass
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Bearer token.",
+            content={"detail": "Missing Bearer token."},
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     token = auth_header.removeprefix("Bearer ").strip()
-    payload = decode_token(token)
-    request.state.jwt_payload = payload
+    try:
+        payload = decode_token(token)
+        request.state.jwt_payload = payload
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Invalid token."},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return await call_next(request)

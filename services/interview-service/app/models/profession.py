@@ -37,7 +37,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, Numeric, String, Text, func, text, JSON
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -132,19 +132,17 @@ class Profession(Base):
 
     # ── Required skills ───────────────────────────────────────────────────── #
     required_skills: Mapped[list] = mapped_column(
-        JSONB,
+        JSON().with_variant(JSONB, "postgresql"),
         nullable=False,
         default=list,
-        server_default="'[]'::jsonb",
         comment="Ordered JSON array of required skill strings.",
     )
 
     # ── Roadmap ───────────────────────────────────────────────────────────── #
     roadmap: Mapped[dict] = mapped_column(
-        JSONB,
+        JSON().with_variant(JSONB, "postgresql"),
         nullable=False,
         default=dict,
-        server_default="'{}'::jsonb",
         comment="Structured JSON learning roadmap. Schema defined by service layer.",
     )
 

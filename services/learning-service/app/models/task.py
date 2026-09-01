@@ -234,12 +234,6 @@ class Task(Base):
     )
 
     # ── Relationships ─────────────────────────────────────────────────────── #
-    # Unidirectional — RoadmapStep model is NOT modified.
-    roadmap_step: Mapped["RoadmapStep"] = relationship(  # type: ignore[name-defined]
-        "RoadmapStep",
-        lazy="select",
-    )
-
     submissions: Mapped[list["TaskSubmission"]] = relationship(
         "TaskSubmission",
         back_populates="task",
@@ -391,12 +385,6 @@ class TaskSubmission(Base):
     )
 
     # ── Relationships ─────────────────────────────────────────────────────── #
-    # Unidirectional to User — User model is NOT modified.
-    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User",
-        lazy="select",
-    )
-
     task: Mapped["Task"] = relationship(
         "Task",
         back_populates="submissions",

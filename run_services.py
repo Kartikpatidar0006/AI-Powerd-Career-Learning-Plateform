@@ -35,10 +35,9 @@ def start_services():
     
     flags = 0
     if sys.platform == "win32":
-        DETACHED_PROCESS = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
         CREATE_NO_WINDOW = 0x08000000
-        flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
     
     for svc in SERVICES:
         name = svc["name"]
@@ -59,6 +58,7 @@ def start_services():
             stdout=log_file,
             stderr=subprocess.STDOUT,
             creationflags=flags,
+            close_fds=False if sys.platform == "win32" else True,
         )
         print(f"  [OK]   {name:<20} -> http://localhost:{port}")
         
@@ -99,11 +99,52 @@ def stop_services():
         kill_port(svc["port"])
     print("  All services stopped.\n")
 
+def dev_services():
+    import time
+    print("=" * 60)
+    print("  Starting AI Career Hub Microservices in Interactive Mode")
+    print("  Press Ctrl+C to stop all services.")
+    print("=" * 60)
+    
+    processes = []
+    try:
+        for svc in SERVICES:
+            name = svc["name"]
+            folder = svc["dir"]
+            port = svc["port"]
+            
+            if is_port_open(port):
+                print(f"  [SKIP] {name:<20} - port {port} already in use")
+                continue
+                
+            p = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", str(port), "--reload"],
+                cwd=folder,
+            )
+            processes.append((name, p))
+            print(f"  [OK]   {name:<20} -> http://localhost:{port}")
+            
+        print("=" * 60)
+        print("  All services running. Press Ctrl+C to terminate.")
+        print("=" * 60)
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping all services...")
+        for name, p in processes:
+            p.terminate()
+        for svc in SERVICES:
+            kill_port(svc["port"])
+        print("All services stopped.")
+
 if __name__ == "__main__":
-    action = sys.argv[1] if len(sys.argv) > 1 else "start"
+    action = sys.argv[1].lower() if len(sys.argv) > 1 else "start"
     if action == "status":
         status_services()
     elif action == "stop":
         stop_services()
+    elif action in ("dev", "--dev", "watch"):
+        dev_services()
     else:
         start_services()
+

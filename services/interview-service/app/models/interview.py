@@ -166,16 +166,6 @@ class Interview(Base):
     )
 
     # ── Relationships ─────────────────────────────────────────────────────── #
-    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User",
-        lazy="select",
-    )
-
-    task: Mapped["Task"] = relationship(  # type: ignore[name-defined]
-        "Task",
-        lazy="select",
-    )
-
     questions: Mapped[list["InterviewQuestion"]] = relationship(
         "InterviewQuestion",
         back_populates="interview",

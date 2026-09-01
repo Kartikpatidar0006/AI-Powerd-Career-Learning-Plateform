@@ -166,19 +166,6 @@ class LearningPath(Base):
         comment="UTC timestamp of last modification. Auto-updated.",
     )
 
-    # ── Relationships ─────────────────────────────────────────────────────── #
-    profession: Mapped["Profession"] = relationship(  # type: ignore[name-defined]
-        "Profession",
-        back_populates="learning_paths",
-        lazy="select",
-    )
-
-    skill: Mapped["Skill"] = relationship(  # type: ignore[name-defined]
-        "Skill",
-        back_populates="learning_paths",
-        lazy="select",
-    )
-
     # ── Dunder methods ────────────────────────────────────────────────────── #
 
     def __repr__(self) -> str:

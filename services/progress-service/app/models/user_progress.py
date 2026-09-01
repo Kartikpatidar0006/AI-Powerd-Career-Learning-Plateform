@@ -233,19 +233,6 @@ class UserProgress(Base):
         comment="UTC timestamp of last modification. Auto-updated.",
     )
 
-    # ── Relationships ─────────────────────────────────────────────────────── #
-    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User",
-        back_populates="progress_records",
-        lazy="select",
-    )
-
-    skill: Mapped["Skill"] = relationship(  # type: ignore[name-defined]
-        "Skill",
-        back_populates="user_progress_records",
-        lazy="select",
-    )
-
     # ── Dunder methods ────────────────────────────────────────────────────── #
 
     def __repr__(self) -> str:

@@ -181,13 +181,6 @@ class Course(Base):
         comment="UTC timestamp of last modification. Auto-updated.",
     )
 
-    # ── Relationships ─────────────────────────────────────────────────────── #
-    skill: Mapped["Skill"] = relationship(  # type: ignore[name-defined]
-        "Skill",
-        back_populates="courses",
-        lazy="select",
-    )
-
     # ── Dunder methods ────────────────────────────────────────────────────── #
 
     def __repr__(self) -> str:
