@@ -23,20 +23,67 @@ import {
   Building,
   Calendar,
   Layers,
+  AlertCircle,
 } from 'lucide-react';
 import Card from '../components/Card/Card';
 import Button from '../components/Button/Button';
 import Input from '../components/Input/Input';
 import useAuth from '../hooks/useAuth';
 import userService from '../services/userService';
-import {
-  PROFESSION_CATALOG,
-  SKILL_OPTIONS,
-  INTEREST_OPTIONS,
-  GOAL_PROFESSION_OPTIONS,
-  ASSESSMENT_QUESTIONS,
-} from '../constants/professionCatalog';
+import professionService from '../services/professionService';
 import onboardingService from '../services/onboardingService';
+
+// ─── Static UI constants (not profession-catalog data) ─────────────────────
+// These lists drive UI chips only — they are NOT used to create/match professions.
+
+const SKILL_OPTIONS = [
+  'Python', 'JavaScript', 'React', 'Node.js', 'SQL', 'Git', 'Linux',
+  'Docker', 'PyTorch', 'Pandas', 'NumPy', 'Scikit-learn', 'CSS',
+  'TypeScript', 'Java', 'C++', 'Go', 'Rust', 'Kubernetes', 'AWS',
+];
+
+const INTEREST_OPTIONS = [
+  { label: 'AI & Machine Learning', desc: 'Predictive Models, Neural Networks & MLOps' },
+  { label: 'Frontend & UI Engineering', desc: 'Modern Web Apps, React & User Interfaces' },
+  { label: 'Backend & Systems', desc: 'APIs, Databases, Microservices & Cloud' },
+  { label: 'Data Science & Analytics', desc: 'Data Pipelines, BI Dashboards & Statistics' },
+  { label: 'Cloud & DevOps', desc: 'CI/CD, Containers, Kubernetes & Cloud Infra' },
+  { label: 'Cybersecurity', desc: 'Penetration Testing, Security Audits & Cryptography' },
+];
+
+// Assessment questions are fixed UX questions. The `alignment` strings are partial
+// profession name hints used only for relative scoring — they do NOT resolve to IDs.
+const ASSESSMENT_QUESTIONS = [
+  {
+    id: 1,
+    question: 'Which area of problem-solving excites you the most?',
+    options: [
+      { text: 'Developing predictive models, feature pipelines, and machine learning algorithms', alignment: ['Machine Learning', 'Data Science'] },
+      { text: 'Building responsive web interfaces, interactive components, and user-facing features', alignment: ['Frontend', 'UI'] },
+      { text: 'Designing scalable APIs, databases, and distributed systems', alignment: ['Backend', 'Systems', 'Cloud'] },
+    ],
+  },
+  {
+    id: 2,
+    question: 'What is your ideal project artifact?',
+    options: [
+      { text: 'A trained machine learning model with feature engineering and MLOps deployment', alignment: ['Machine Learning'] },
+      { text: 'A modern, responsive React web application with clean component styling', alignment: ['Frontend'] },
+      { text: 'A robust REST API with authentication, database ORM, and Docker deployment', alignment: ['Backend', 'Systems'] },
+    ],
+  },
+  {
+    id: 3,
+    question: 'What type of daily coding activity sounds most rewarding?',
+    options: [
+      { text: 'Optimizing model hyper-parameters and feature transformations using Pandas & PyTorch', alignment: ['Machine Learning', 'Data Science'] },
+      { text: 'Creating reusable React components, state management hooks, and UI micro-animations', alignment: ['Frontend'] },
+      { text: 'Architecting microservices, writing CI/CD pipelines, and cloud infra configs', alignment: ['Backend', 'Cloud'] },
+    ],
+  },
+];
+
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export const OnboardingPage = () => {
   const { user } = useAuth();
@@ -47,6 +94,11 @@ export const OnboardingPage = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const totalProfileSteps = 9;
 
+  // ── Backend professions state ────────────────────────────────────────────
+  const [backendProfessions, setBackendProfessions] = useState([]);
+  const [professionsLoading, setProfessionsLoading] = useState(true);
+  const [professionsError, setProfessionsError] = useState(null);
+
   // Step 1: Personal & Education
   const [fullName, setFullName] = useState(user?.full_name || '');
   const [age, setAge] = useState('');
@@ -55,17 +107,17 @@ export const OnboardingPage = () => {
   const [degree, setDegree] = useState('B.Tech Computer Science');
   const [graduationYear, setGraduationYear] = useState('2026');
 
-  // Step 2: Career Goal
-  const [careerGoal, setCareerGoal] = useState('AI Engineer');
+  // Step 2: Career Goal — stores the profession NAME string (display only)
+  const [careerGoal, setCareerGoal] = useState('');
 
   // Step 3: Experience Level
   const [experienceLevel, setExperienceLevel] = useState('Beginner');
 
   // Step 4: Current Skills
-  const [selectedSkills, setSelectedSkills] = useState(['Python', 'JavaScript']);
+  const [selectedSkills, setSelectedSkills] = useState([]);
 
   // Step 5: Interests
-  const [selectedInterests, setSelectedInterests] = useState(['AI', 'Web Development']);
+  const [selectedInterests, setSelectedInterests] = useState([]);
 
   // Step 6: Daily Study Time
   const [dailyStudyTime, setDailyStudyTime] = useState('1 hour');
@@ -83,34 +135,56 @@ export const OnboardingPage = () => {
   const [assessmentAnswers, setAssessmentAnswers] = useState({});
   const [assessmentIndex, setAssessmentIndex] = useState(0);
 
-  // Calculated Recommendation & Selected Profession
+  // Ranked Recommendations & Selected Profession (always from backend data)
   const [recommendationResult, setRecommendationResult] = useState(null);
   const [chosenProfession, setChosenProfession] = useState(null);
   const [generatedRoadmap, setGeneratedRoadmap] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
-  // Sync user full name when available
+  // ── Fetch real professions from backend on mount ─────────────────────────
+  useEffect(() => {
+    const loadProfessions = async () => {
+      try {
+        setProfessionsLoading(true);
+        setProfessionsError(null);
+        const data = await professionService.getProfessions({ is_active: true });
+        // API may return { data: [...] } or directly an array
+        const list = Array.isArray(data) ? data : (data?.data || data?.items || []);
+        setBackendProfessions(list);
+        // Pre-select first profession name as career goal default
+        if (list.length > 0 && !careerGoal) {
+          setCareerGoal(list[0].name);
+        }
+      } catch (err) {
+        console.error('Failed to load professions from backend:', err);
+        setProfessionsError('Could not load professions. Please check your connection and try again.');
+      } finally {
+        setProfessionsLoading(false);
+      }
+    };
+    loadProfessions();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync user full name when auth loads
   useEffect(() => {
     if (user?.full_name && !fullName) {
       setFullName(user.full_name);
     }
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle skill toggle
   const toggleSkill = (skill) => {
-    if (selectedSkills.includes(skill)) {
-      setSelectedSkills(selectedSkills.filter((s) => s !== skill));
-    } else {
-      setSelectedSkills([...selectedSkills, skill]);
-    }
+    setSelectedSkills((prev) =>
+      prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]
+    );
   };
 
   // Handle interest toggle
   const toggleInterest = (interest) => {
-    if (selectedInterests.includes(interest)) {
-      setSelectedInterests(selectedInterests.filter((i) => i !== interest));
-    } else {
-      setSelectedInterests([...selectedInterests, interest]);
-    }
+    setSelectedInterests((prev) =>
+      prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]
+    );
   };
 
   // Move to next step in profile wizard
@@ -119,7 +193,7 @@ export const OnboardingPage = () => {
       setCurrentStep((prev) => prev + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      // Save Profile & Transition to Assessment
+      // Save wizard progress to localStorage (only wizard state, not profession data)
       const profileData = {
         fullName,
         age,
@@ -127,7 +201,7 @@ export const OnboardingPage = () => {
         college,
         degree,
         graduationYear,
-        careerGoal,
+        careerGoal,        // profession name string for scoring hint only
         experienceLevel,
         skills: selectedSkills,
         interests: selectedInterests,
@@ -161,10 +235,20 @@ export const OnboardingPage = () => {
     if (assessmentIndex < ASSESSMENT_QUESTIONS.length - 1) {
       setAssessmentIndex((prev) => prev + 1);
     } else {
-      // Finish Assessment & Calculate Recommendation
+      // Finish Assessment — rank real backend professions using scoring logic
       const profileData = onboardingService.getProfile();
       const answersArray = Object.values(assessmentAnswers);
-      const result = onboardingService.calculateRecommendation(profileData, answersArray);
+
+      // rankProfessions uses only backend-sourced profession objects
+      const result = onboardingService.rankProfessions(profileData, answersArray, backendProfessions);
+
+      if (!result) {
+        // Fallback: no professions loaded — show error
+        setProfessionsError('No professions available to recommend. Please contact support.');
+        setStage('profile');
+        return;
+      }
+
       setRecommendationResult(result);
       setChosenProfession(result.primary);
       setStage('recommendation');
@@ -172,34 +256,41 @@ export const OnboardingPage = () => {
     }
   };
 
-  // Confirm Profession and Generate Roadmap
+  // Confirm Profession — generates local roadmap preview & submits to backend
   const handleConfirmProfession = async (professionToSet) => {
     const targetProf = professionToSet || chosenProfession || recommendationResult?.primary;
     setChosenProfession(targetProf);
+    setSubmitError(null);
 
+    // Generate a local roadmap preview (for the onboarding roadmap stage display only)
     const profileData = onboardingService.getProfile();
     const roadmap = onboardingService.generateRoadmap(targetProf, profileData);
     setGeneratedRoadmap(roadmap);
 
-    // Save profile to local storage as fallback
-    onboardingService.saveProfile({
-      selectedProfession: targetProf,
-      activeRoadmap: roadmap,
-      onboardingCompleted: true,
-    });
-
-    // Save to Database via Backend API
+    // Submit to Backend API using REAL id/slug from the backend profession object
+    setSubmitting(true);
     try {
       await userService.submitOnboarding({
-        profession_id: targetProf.id,
-        profession_slug: targetProf.slug,
+        profession_id: targetProf.id,         // real UUID from GET /professions
+        profession_slug: targetProf.slug,     // real slug from GET /professions
         assessment_score: targetProf.confidence || 85,
         ai_match_percentage: targetProf.confidence || 85,
         daily_study_time: dailyStudyTime,
         experience_level: experienceLevel,
       });
+
+      // Clear wizard localStorage now that onboarding is saved to DB
+      onboardingService.clearProfile();
+
     } catch (err) {
-      console.error('Failed to sync onboarding with backend', err);
+      console.error('Failed to sync onboarding with backend:', err);
+      setSubmitError(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        'Failed to save your selection. You can still continue — we will retry on your next login.'
+      );
+    } finally {
+      setSubmitting(false);
     }
 
     setStage('roadmap');
@@ -261,7 +352,7 @@ export const OnboardingPage = () => {
         <div
           style={{
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             marginTop: '2rem',
             padding: '0.75rem 1.25rem',
@@ -426,7 +517,7 @@ export const OnboardingPage = () => {
               </div>
             )}
 
-            {/* STEP 2: Career Goal */}
+            {/* STEP 2: Career Goal — populated from real backend professions */}
             {currentStep === 2 && (
               <div>
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.25rem' }}>
@@ -436,36 +527,79 @@ export const OnboardingPage = () => {
                   Select the profession you aspire to master.
                 </p>
 
-                <div className="grid-2" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                  {GOAL_PROFESSION_OPTIONS.map((profName) => {
-                    const isSelected = careerGoal === profName;
-                    return (
-                      <div
-                        key={profName}
-                        onClick={() => setCareerGoal(profName)}
-                        style={{
-                          padding: '1rem',
-                          borderRadius: 'var(--radius-md)',
-                          background: isSelected ? 'var(--primary-light)' : 'var(--bg-input)',
-                          border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <Briefcase size={20} style={{ color: isSelected ? 'var(--primary)' : 'var(--text-dim)' }} />
-                          <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: isSelected ? '#fff' : 'var(--text-main)' }}>
-                            {profName}
-                          </span>
-                        </div>
-                        {isSelected && <CheckCircle2 size={18} style={{ color: 'var(--primary)' }} />}
+                {/* Loading state */}
+                {professionsLoading && (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <div style={{ marginBottom: '0.75rem', fontSize: '1.5rem' }}>⏳</div>
+                    Loading professions from server...
+                  </div>
+                )}
+
+                {/* Error state */}
+                {professionsError && !professionsLoading && (
+                  <div
+                    style={{
+                      padding: '1rem',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#fca5a5',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                    }}
+                  >
+                    <AlertCircle size={20} />
+                    <span>{professionsError}</span>
+                  </div>
+                )}
+
+                {/* Real profession list from backend */}
+                {!professionsLoading && !professionsError && (
+                  <div className="grid-2" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                    {backendProfessions.length === 0 ? (
+                      <div style={{ gridColumn: 'span 2', textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                        No professions available yet. Please contact an administrator.
                       </div>
-                    );
-                  })}
-                </div>
+                    ) : (
+                      backendProfessions.map((prof) => {
+                        const isSelected = careerGoal === prof.name;
+                        return (
+                          <div
+                            key={prof.id}
+                            onClick={() => setCareerGoal(prof.name)}
+                            style={{
+                              padding: '1rem',
+                              borderRadius: 'var(--radius-md)',
+                              background: isSelected ? 'var(--primary-light)' : 'var(--bg-input)',
+                              border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              transition: 'all 0.2s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <Briefcase size={20} style={{ color: isSelected ? 'var(--primary)' : 'var(--text-dim)' }} />
+                              <div>
+                                <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: isSelected ? '#fff' : 'var(--text-main)', display: 'block' }}>
+                                  {prof.name}
+                                </span>
+                                {prof.category && (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {prof.category}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && <CheckCircle2 size={18} style={{ color: 'var(--primary)' }} />}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -809,7 +943,7 @@ export const OnboardingPage = () => {
             <div
               style={{
                 display: 'flex',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 marginTop: '2rem',
                 paddingTop: '1.25rem',
@@ -829,6 +963,11 @@ export const OnboardingPage = () => {
                 variant="primary"
                 onClick={handleNextStep}
                 icon={currentStep === totalProfileSteps ? Sparkles : ArrowRight}
+                disabled={
+                  // Block on Step 2 if professions haven't loaded yet
+                  (currentStep === 2 && professionsLoading) ||
+                  (currentStep === 2 && !professionsError && backendProfessions.length > 0 && !careerGoal)
+                }
               >
                 {currentStep === totalProfileSteps ? 'Start Career Assessment' : 'Next Step'}
               </Button>
@@ -896,7 +1035,7 @@ export const OnboardingPage = () => {
         )}
 
         {/* ================================================================= */}
-        {/* STAGE 3: PROFESSION RECOMMENDATION                                */}
+        {/* STAGE 3: PROFESSION RECOMMENDATION (backend data)                 */}
         {/* ================================================================= */}
         {stage === 'recommendation' && recommendationResult && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -980,7 +1119,7 @@ export const OnboardingPage = () => {
                   CORE SKILLS YOU WILL MASTER:
                 </span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {recommendationResult.primary.skills.map((sk) => (
+                  {(recommendationResult.primary.skills || []).map((sk) => (
                     <span
                       key={sk}
                       style={{
@@ -1005,44 +1144,48 @@ export const OnboardingPage = () => {
                   size="lg"
                   icon={ArrowRight}
                   onClick={() => handleConfirmProfession(recommendationResult.primary)}
+                  disabled={submitting}
                 >
-                  Accept & Build Roadmap
+                  {submitting ? 'Saving...' : 'Accept & Build Roadmap'}
                 </Button>
               </div>
             </Card>
 
             {/* Alternative Career Recommendations */}
-            <div>
-              <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>
-                Alternative Career Matches
-              </h3>
-              <div className="grid-3">
-                {recommendationResult.alternatives.map((alt) => (
-                  <Card key={alt.id} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-dim)' }}>{alt.category}</span>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--primary)' }}>{alt.confidence}% Match</span>
+            {recommendationResult.alternatives?.length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>
+                  Alternative Career Matches
+                </h3>
+                <div className="grid-3">
+                  {recommendationResult.alternatives.map((alt) => (
+                    <Card key={alt.id} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-dim)' }}>{alt.category}</span>
+                          <span style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--primary)' }}>{alt.confidence}% Match</span>
+                        </div>
+                        <h4 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                          {alt.title}
+                        </h4>
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '1rem' }}>
+                          {(alt.description || '').substring(0, 100)}{alt.description?.length > 100 ? '...' : ''}
+                        </p>
                       </div>
-                      <h4 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                        {alt.title}
-                      </h4>
-                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '1rem' }}>
-                        {alt.description.substring(0, 100)}...
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleConfirmProfession(alt)}
-                      style={{ width: '100%' }}
-                    >
-                      Select This Career
-                    </Button>
-                  </Card>
-                ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConfirmProfession(alt)}
+                        style={{ width: '100%' }}
+                        disabled={submitting}
+                      >
+                        Select This Career
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1051,6 +1194,27 @@ export const OnboardingPage = () => {
         {/* ================================================================= */}
         {stage === 'roadmap' && generatedRoadmap && (
           <Card>
+            {/* Backend submission error — non-blocking */}
+            {submitError && (
+              <div
+                style={{
+                  marginBottom: '1.25rem',
+                  padding: '0.875rem 1rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  color: '#fde68a',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  fontSize: '0.875rem',
+                }}
+              >
+                <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+                <span><strong>Note:</strong> {submitError}</span>
+              </div>
+            )}
+
             <div style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>

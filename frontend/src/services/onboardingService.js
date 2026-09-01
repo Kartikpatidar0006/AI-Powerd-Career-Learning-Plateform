@@ -1,11 +1,9 @@
-import { PROFESSION_CATALOG } from '../constants/professionCatalog';
-
 const ONBOARDING_STORAGE_KEY = 'ai_career_onboarding_profile';
-const RECOMMENDATION_STORAGE_KEY = 'ai_career_recommendation';
 
 export const onboardingService = {
   /**
-   * Save user's onboarding wizard inputs to local storage
+   * Save user's onboarding wizard inputs to local storage (wizard progress only).
+   * Never store profession/roadmap data that must come from the DB.
    */
   saveProfile: (profileData) => {
     try {
@@ -20,7 +18,7 @@ export const onboardingService = {
   },
 
   /**
-   * Get user's onboarding profile from local storage
+   * Get user's onboarding wizard progress from local storage.
    */
   getProfile: () => {
     try {
@@ -32,109 +30,143 @@ export const onboardingService = {
   },
 
   /**
-   * Calculate career recommendations based on wizard profile + assessment answers
+   * Clear onboarding wizard progress from local storage.
+   * Call this after onboarding is successfully submitted to the backend.
    */
-  calculateRecommendation: (profile, assessmentAnswers = []) => {
+  clearProfile: () => {
+    try {
+      localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  /**
+   * Score and rank backend professions against the user's profile + assessment answers.
+   * All profession objects come from the real API — IDs and slugs are always backend-sourced.
+   *
+   * @param {object} profile - Saved onboarding wizard answers
+   * @param {Array}  assessmentAnswers - Array of selected assessment option objects
+   * @param {Array}  backendProfessions - Professions fetched from GET /professions
+   * @returns {{ primary, alternatives, allRanked, calculatedAt }}
+   */
+  rankProfessions: (profile, assessmentAnswers = [], backendProfessions = []) => {
+    if (!backendProfessions.length) return null;
+
     const scores = {};
 
-    // Initialize scores for all catalog items
-    PROFESSION_CATALOG.forEach((prof) => {
-      scores[prof.name] = 50; // base baseline score
+    // Initialize every backend profession with a baseline score
+    backendProfessions.forEach((prof) => {
+      scores[prof.id] = 50;
     });
 
-    // 1. Direct Goal Alignment boost
-    if (profile?.careerGoal && scores[profile.careerGoal] !== undefined) {
-      scores[profile.careerGoal] += 30;
-    }
-
-    // 2. Skill match boost
-    const userSkills = profile?.skills || [];
-    if (userSkills.length > 0) {
-      PROFESSION_CATALOG.forEach((prof) => {
-        const matchingSkills = prof.skills.filter((sk) =>
-          userSkills.some((uSk) => uSk.toLowerCase() === sk.toLowerCase())
-        );
-        const matchRatio = matchingSkills.length / Math.max(prof.skills.length, 1);
-        scores[prof.name] += Math.round(matchRatio * 20);
+    // 1. Direct career goal alignment — match by name (case-insensitive)
+    if (profile?.careerGoal) {
+      backendProfessions.forEach((prof) => {
+        if (
+          prof.name?.toLowerCase().includes(profile.careerGoal.toLowerCase()) ||
+          profile.careerGoal.toLowerCase().includes(prof.name?.toLowerCase())
+        ) {
+          scores[prof.id] += 30;
+        }
       });
     }
 
-    // 3. Interest alignment boost
+    // 2. Skill match boost — compare user skills against profession required_skills
+    const userSkills = profile?.skills || [];
+    if (userSkills.length > 0) {
+      backendProfessions.forEach((prof) => {
+        const profSkills = Array.isArray(prof.required_skills) ? prof.required_skills : [];
+        const matchingSkills = profSkills.filter((sk) =>
+          userSkills.some((uSk) => uSk.toLowerCase() === sk.toLowerCase())
+        );
+        const matchRatio = matchingSkills.length / Math.max(profSkills.length, 1);
+        scores[prof.id] += Math.round(matchRatio * 20);
+      });
+    }
+
+    // 3. Interest alignment boost — match user interests against profession category
     const userInterests = profile?.interests || [];
     if (userInterests.length > 0) {
-      PROFESSION_CATALOG.forEach((prof) => {
+      backendProfessions.forEach((prof) => {
+        const catLower = (prof.category || '').toLowerCase();
         userInterests.forEach((interest) => {
+          const intLower = interest.toLowerCase();
           if (
-            (interest.toLowerCase().includes('ai') && prof.category.includes('AI')) ||
-            (interest.toLowerCase().includes('web') && prof.category.includes('Software')) ||
-            (interest.toLowerCase().includes('data') && prof.category.includes('Data')) ||
-            (interest.toLowerCase().includes('cloud') && prof.category.includes('Cloud')) ||
-            (interest.toLowerCase().includes('security') && prof.category.includes('Security'))
+            (intLower.includes('ai') && (catLower.includes('ai') || catLower.includes('machine'))) ||
+            (intLower.includes('web') && catLower.includes('software')) ||
+            (intLower.includes('frontend') && catLower.includes('software')) ||
+            (intLower.includes('data') && catLower.includes('data')) ||
+            (intLower.includes('cloud') && catLower.includes('cloud')) ||
+            (intLower.includes('security') && catLower.includes('security'))
           ) {
-            scores[prof.name] += 8;
+            scores[prof.id] += 8;
           }
         });
       });
     }
 
-    // 4. Assessment Answer alignment boost
+    // 4. Assessment answer alignment boost — options carry alignment hints (profession names)
     assessmentAnswers.forEach((answer) => {
       if (answer?.alignment) {
-        answer.alignment.forEach((profName) => {
-          if (scores[profName] !== undefined) {
-            scores[profName] += 12;
-          }
+        answer.alignment.forEach((alignedName) => {
+          backendProfessions.forEach((prof) => {
+            if (
+              prof.name?.toLowerCase().includes(alignedName.toLowerCase()) ||
+              alignedName.toLowerCase().includes(prof.name?.toLowerCase())
+            ) {
+              scores[prof.id] += 12;
+            }
+          });
         });
       }
     });
 
-    // Rank and normalize scores into percentages (max 98%, min 65%)
+    // Normalize scores to realistic confidence percentages (68% – 98%)
     const maxRawScore = Math.max(...Object.values(scores), 1);
-    
-    const rankedProfessions = PROFESSION_CATALOG.map((prof) => {
-      const raw = scores[prof.name] || 50;
-      // Normalization formula to yield realistic confidence percentages (75% to 96%)
-      const confidence = Math.min(98, Math.max(68, Math.round((raw / maxRawScore) * 95)));
-      return {
-        ...prof,
-        confidence,
-        rawScore: raw,
-      };
-    }).sort((a, b) => b.confidence - a.confidence);
 
-    const primaryRecommendation = rankedProfessions[0];
-    const alternatives = rankedProfessions.slice(1, 4);
+    const allRanked = backendProfessions
+      .map((prof) => {
+        const raw = scores[prof.id] || 50;
+        const confidence = Math.min(98, Math.max(68, Math.round((raw / maxRawScore) * 95)));
+        // Normalize field names so the rest of the UI stays the same
+        return {
+          // Real backend fields (used for API submission)
+          id: prof.id,
+          slug: prof.slug,
+          // Display fields mapped from backend schema
+          title: prof.name,
+          name: prof.name,
+          category: prof.category || 'Technology',
+          description: prof.description || '',
+          skills: Array.isArray(prof.required_skills) ? prof.required_skills : [],
+          estimatedDuration: prof.estimated_duration || '12-16 Weeks',
+          averageSalary: prof.average_salary
+            ? `$${Number(prof.average_salary).toLocaleString()}`
+            : 'Market Rate',
+          growthRate: prof.growth_rate ? `+${prof.growth_rate}% annual growth` : 'Growing',
+          // Scoring
+          confidence,
+          rawScore: raw,
+        };
+      })
+      .sort((a, b) => b.confidence - a.confidence);
 
-    const result = {
-      primary: primaryRecommendation,
-      alternatives,
-      allRanked: rankedProfessions,
+    return {
+      primary: allRanked[0],
+      alternatives: allRanked.slice(1, 4),
+      allRanked,
       calculatedAt: new Date().toISOString(),
     };
-
-    try {
-      localStorage.setItem(RECOMMENDATION_STORAGE_KEY, JSON.stringify(result));
-    } catch (e) {
-      // ignore
-    }
-
-    return result;
   },
 
   /**
-   * Get calculated recommendation from storage
-   */
-  getRecommendation: () => {
-    try {
-      const data = localStorage.getItem(RECOMMENDATION_STORAGE_KEY);
-      return data ? JSON.parse(data) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-
-  /**
-   * Generate customized roadmap based on selected/recommended profession and profile metrics
+   * Generate a local preview roadmap (for the onboarding roadmap stage only).
+   * Uses real profession data from the backend — profession.id and profession.slug
+   * are always sourced from the API response, never from local constants.
+   *
+   * @param {object} profession - Backend-sourced profession object (with real id/slug)
+   * @param {object} profile    - Saved wizard profile answers
    */
   generateRoadmap: (profession, profile) => {
     const studyTime = profile?.dailyStudyTime || '1 hour';
@@ -206,7 +238,8 @@ export const onboardingService = {
     return {
       title: `${profession.title} Personalized Career Roadmap`,
       professionName: profession.title,
-      professionId: profession.id,
+      professionId: profession.id,        // real backend UUID
+      professionSlug: profession.slug,    // real backend slug
       estimatedDuration: profession.estimatedDuration,
       dailyCommitment: studyTime,
       userLevel: level,

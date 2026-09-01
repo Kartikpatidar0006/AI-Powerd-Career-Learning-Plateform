@@ -18,12 +18,11 @@ import Button from '../components/Button/Button';
 import Loader from '../components/Loader/Loader';
 import Input from '../components/Input/Input';
 import professionService from '../services/professionService';
-import { PROFESSION_CATALOG } from '../constants/professionCatalog';
-import onboardingService from '../services/onboardingService';
 
 export const ProfessionSelectionPage = () => {
   const [professions, setProfessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const navigate = useNavigate();
@@ -32,26 +31,37 @@ export const ProfessionSelectionPage = () => {
     const fetchProfessions = async () => {
       try {
         setLoading(true);
-        const apiData = await professionService.getProfessions();
-        const apiItems = Array.isArray(apiData) ? apiData : apiData.items || [];
+        setError(null);
+        const apiData = await professionService.getProfessions({ is_active: true });
+        // Normalize different API response shapes
+        const apiItems = Array.isArray(apiData)
+          ? apiData
+          : (apiData?.data || apiData?.items || []);
 
-        // Populate catalog items restricted to Machine Learning Engineer and Frontend Developer
-        const mergedMap = new Map();
+        // Normalize backend field names to what the UI expects
+        const normalized = apiItems.map((p) => ({
+          id: p.id,
+          slug: p.slug,
+          title: p.name || p.title,
+          name: p.name || p.title,
+          category: p.category || 'Technology',
+          description: p.description || '',
+          skills: Array.isArray(p.required_skills) ? p.required_skills : (p.skills || []),
+          estimatedDuration: p.estimated_duration || p.estimatedDuration || '12-16 Weeks',
+          difficulty: p.difficulty || 'Intermediate',
+          averageSalary: p.average_salary
+            ? `$${Number(p.average_salary).toLocaleString()}`
+            : (p.averageSalary || 'Market Rate'),
+          growthRate: p.growth_rate
+            ? `+${p.growth_rate}% annual growth`
+            : (p.growthRate || null),
+          is_active: p.is_active !== false,
+        }));
 
-        PROFESSION_CATALOG.forEach((item) => {
-          mergedMap.set(item.slug, item);
-        });
-
-        apiItems.forEach((apiItem) => {
-          const key = apiItem.slug || apiItem.name?.toLowerCase().replace(/\s+/g, '-');
-          if (mergedMap.has(key)) {
-            mergedMap.set(key, { ...mergedMap.get(key), ...apiItem });
-          }
-        });
-
-        setProfessions(Array.from(mergedMap.values()));
+        setProfessions(normalized);
       } catch (err) {
-        setProfessions(PROFESSION_CATALOG);
+        console.error('Failed to load professions:', err);
+        setError('Could not load professions. Please refresh the page or try again later.');
       } finally {
         setLoading(false);
       }
@@ -60,14 +70,18 @@ export const ProfessionSelectionPage = () => {
     fetchProfessions();
   }, []);
 
-  // Filter categories
-  const categories = ['All', 'AI & Machine Learning', 'Software Engineering'];
+  // Derive category filter options from actual backend data
+  const categories = ['All', ...Array.from(new Set(professions.map((p) => p.category))).filter(Boolean)];
 
   const filteredProfessions = professions.filter((prof) => {
+    const titleLower = (prof.title || '').toLowerCase();
+    const descLower = (prof.description || '').toLowerCase();
+    const termLower = searchTerm.toLowerCase();
+
     const matchesSearch =
-      prof.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      prof.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      prof.skills.some((sk) => sk.toLowerCase().includes(searchTerm.toLowerCase()));
+      titleLower.includes(termLower) ||
+      descLower.includes(termLower) ||
+      (prof.skills || []).some((sk) => sk.toLowerCase().includes(termLower));
 
     const matchesCategory =
       selectedCategory === 'All' || prof.category === selectedCategory;
@@ -76,19 +90,20 @@ export const ProfessionSelectionPage = () => {
   });
 
   const handleExploreProfession = (prof) => {
-    // Set as selected profession in onboarding profile storage
-    const currentOnboarding = onboardingService.getProfile() || {};
-    const roadmap = onboardingService.generateRoadmap(prof, currentOnboarding);
-    
-    onboardingService.saveProfile({
-      selectedProfession: prof,
-      activeRoadmap: roadmap,
-    });
-
+    // Navigate to the roadmap using the real backend profession id
     navigate(`/roadmaps?profession_id=${prof.id || prof.slug}`);
   };
 
-  if (loading) return <Loader label="Loading featured career professions..." />;
+  if (loading) return <Loader label="Loading career professions from server..." />;
+
+  if (error) {
+    return (
+      <div style={{ padding: '3rem', textAlign: 'center' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⚠️</div>
+        <p style={{ color: 'var(--text-muted)' }}>{error}</p>
+      </div>
+    );
+  }
 
 
   return (
