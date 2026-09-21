@@ -24,6 +24,7 @@ import ProgressPage from '../pages/ProgressPage';
 import NotificationPage from '../pages/NotificationPage';
 import ProfilePage from '../pages/ProfilePage';
 import OnboardingPage from '../pages/OnboardingPage';
+import AgentDashboard from '../pages/AgentDashboard';
 import NotFoundPage from '../pages/NotFoundPage';
 
 export const AppRoutes = () => {
@@ -64,6 +65,7 @@ export const AppRoutes = () => {
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/notifications" element={<NotificationPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/agent-dashboard" element={<AgentDashboard />} />
         </Route>
       </Route>
 

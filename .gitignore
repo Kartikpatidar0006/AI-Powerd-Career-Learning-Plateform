@@ -72,11 +72,14 @@ yarn-error.log*
 .yarn/install-state.gz
 
 # Build outputs
+dist/
 frontend/dist/
 frontend/build/
 frontend/.next/
 frontend/out/
 *.local
+.vite/
+.vite-temp/
 
 # ---------------------------------------------------------------------------
 # 🐳 Docker
@@ -112,11 +115,14 @@ Thumbs.db
 # 📝 Logs & Temp Files
 # ---------------------------------------------------------------------------
 logs/
+.logs/
 *.log
 *.tmp
 *.temp
 *.bak
 *.orig
+test_*.db
+test_*.log
 
 # ---------------------------------------------------------------------------
 # 🔧 Alembic / Migrations (keep migration files, ignore generated cache)

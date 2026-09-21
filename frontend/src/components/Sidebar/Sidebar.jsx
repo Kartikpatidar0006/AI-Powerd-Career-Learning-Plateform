@@ -12,6 +12,7 @@ import {
   Sparkles,
   Award,
   Zap,
+  Bot,
 } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 
@@ -39,7 +40,8 @@ export const Sidebar = ({ isOpen, unreadCount = 0 }) => {
     {
       sectionTitle: 'AI STUDIO & ANALYTICS',
       items: [
-        { label: '1-on-1 AI Interview Room', path: '/interviews', icon: Video, isHot: true },
+        { label: '🤖 AI Agent Dashboard', path: '/agent-dashboard', icon: Bot, isHot: true },
+        { label: '1-on-1 AI Interview Room', path: '/interviews', icon: Video },
         { label: 'LeetCode Career Progress', path: '/progress', icon: TrendingUp },
       ],
     },

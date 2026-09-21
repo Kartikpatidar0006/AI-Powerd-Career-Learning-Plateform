@@ -5,9 +5,9 @@
   Launches Gateway and Microservices as minimized background windows so they don't clutter your screen.
 
   Usage:
-    .\run-services.ps1              # Start all services
-    .\run-services.ps1 -Action stop   # Stop all services
-    .\run-services.ps1 -Action status # Check running services
+    .\scripts\run-services.ps1              # Start all services
+    .\scripts\run-services.ps1 -Action stop   # Stop all services
+    .\scripts\run-services.ps1 -Action status # Check running services
 #>
 
 param(
@@ -15,7 +15,7 @@ param(
     [string]$Action = "start"
 )
 
-$base = $PSScriptRoot
+$base = Split-Path -Parent $PSScriptRoot
 
 $services = @(
     @{ Name = "Auth Service";         Dir = (Join-Path $base "services\auth-service");         Port = 8001 },
