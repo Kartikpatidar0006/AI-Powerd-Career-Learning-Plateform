@@ -1,14 +1,18 @@
 /**
  * Application router configuration.
  *
- * Defines all routes including public (login, signup) and
- * protected (dashboard) routes with the ProtectedRoute guard.
+ * Defines all routes including:
+ * - Public: /login, /signup
+ * - Protected: /onboarding, /dashboard
+ * - ProtectedRoute guard prevents unauthorized access
+ * - Automatic routing checks profile lock status
  */
 
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import LoginPage from '../pages/LoginPage';
 import SignupPage from '../pages/SignupPage';
 import DashboardPage from '../pages/DashboardPage';
+import OnboardingPage from '../pages/OnboardingPage';
 import ProtectedRoute from '../components/ProtectedRoute';
 
 const router = createBrowserRouter([
@@ -25,13 +29,21 @@ const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
+        path: '/onboarding',
+        element: <OnboardingPage />,
+      },
+      {
         path: '/dashboard',
         element: <DashboardPage />,
+      },
+      {
+        path: '/',
+        element: <Navigate to="/dashboard" replace />,
       },
     ],
   },
   {
-    // Default redirect
+    // Default redirect to login
     path: '*',
     element: <Navigate to="/login" replace />,
   },
