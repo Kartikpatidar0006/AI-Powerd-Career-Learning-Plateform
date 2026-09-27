@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────
+   Global Styles — AI Powered Career Platform
+   ────────────────────────────────────────────── */
+
+@theme {
+  --color-primary-50: oklch(0.97 0.01 250);
+  --color-primary-100: oklch(0.93 0.03 250);
+  --color-primary-200: oklch(0.86 0.06 250);
+  --color-primary-300: oklch(0.76 0.10 250);
+  --color-primary-400: oklch(0.65 0.15 250);
+  --color-primary-500: oklch(0.55 0.19 250);
+  --color-primary-600: oklch(0.47 0.19 250);
+  --color-primary-700: oklch(0.40 0.16 250);
+  --color-primary-800: oklch(0.34 0.12 250);
+  --color-primary-900: oklch(0.27 0.08 250);
+  --color-primary-950: oklch(0.20 0.06 250);
+
+  --color-surface-50: oklch(0.98 0.005 260);
+  --color-surface-100: oklch(0.95 0.008 260);
+  --color-surface-200: oklch(0.91 0.01 260);
+  --color-surface-700: oklch(0.35 0.02 260);
+  --color-surface-800: oklch(0.25 0.02 260);
+  --color-surface-900: oklch(0.18 0.02 260);
+  --color-surface-950: oklch(0.13 0.02 260);
+
+  --color-accent-400: oklch(0.75 0.18 160);
+  --color-accent-500: oklch(0.65 0.20 160);
+
+  --color-danger-400: oklch(0.65 0.20 25);
+  --color-danger-500: oklch(0.55 0.22 25);
+}
+
+/* Base styles */
+html {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--color-surface-950) 0%, var(--color-primary-950) 50%, var(--color-surface-900) 100%);
+  color: var(--color-surface-100);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 2px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-900);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-700);
+  border-radius: 3px;
+}

@@ -1,0 +1,97 @@
+# ──────────────────────────────────────────────────────────────────────
+# AI Powered Career Learning Platform — Docker Compose
+# Week 1: Foundation & Auth Infrastructure
+# ──────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL for Auth Service ────────────────────────────────────
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: career-platform-postgres-auth
+    environment:
+      POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
+      POSTGRES_USER: ${AUTH_DB_USER:-auth_user}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth_pass}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER:-auth_user} -d ${AUTH_DB_NAME:-auth_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - career-network
+
+  # ── Auth Service ───────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: career-platform-auth-service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${AUTH_DB_USER:-auth_user}:${AUTH_DB_PASSWORD:-auth_pass}@postgres-auth:5432/${AUTH_DB_NAME:-auth_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-a-strong-secret}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    command: ["bash", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"]
+    volumes:
+      - ./services/auth-service:/app
+    networks:
+      - career-network
+
+  # ── API Gateway ────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: career-platform-api-gateway
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+    volumes:
+      - ./services/api-gateway:/app
+    networks:
+      - career-network
+
+  # ── Frontend ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: career-platform-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - career-network
+
+volumes:
+  postgres_auth_data:
+    name: career-platform-postgres-auth-data
+
+networks:
+  career-network:
+    name: career-platform-network
+    driver: bridge
