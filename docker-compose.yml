@@ -50,6 +50,53 @@ services:
     networks:
       - career-network
 
+  # ── PostgreSQL for Profile Agent Service ────────────────────────────
+  postgres-profile:
+    image: postgres:16-alpine
+    container_name: career-platform-postgres-profile
+    environment:
+      POSTGRES_DB: ${PROFILE_DB_NAME:-profile_db}
+      POSTGRES_USER: ${PROFILE_DB_USER:-profile_user}
+      POSTGRES_PASSWORD: ${PROFILE_DB_PASSWORD:-profile_pass}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_profile_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PROFILE_DB_USER:-profile_user} -d ${PROFILE_DB_NAME:-profile_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - career-network
+
+  # ── Profile & Dashboard Agent Service ──────────────────────────────
+  profile-agent-service:
+    build:
+      context: ./services/profile-agent-service
+      dockerfile: Dockerfile
+    container_name: career-platform-profile-agent-service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${PROFILE_DB_USER:-profile_user}:${PROFILE_DB_PASSWORD:-profile_pass}@postgres-profile:5432/${PROFILE_DB_NAME:-profile_db}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-profile:
+        condition: service_healthy
+    command: ["bash", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload"]
+    volumes:
+      - ./services/profile-agent-service:/app
+    networks:
+      - career-network
+
   # ── API Gateway ────────────────────────────────────────────────────
   api-gateway:
     build:
@@ -58,12 +105,16 @@ services:
     container_name: career-platform-api-gateway
     environment:
       AUTH_SERVICE_URL: http://auth-service:8001
+      PROFILE_SERVICE_URL: http://profile-agent-service:8002
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-a-strong-secret}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
     ports:
       - "8000:8000"
     depends_on:
       - auth-service
+      - profile-agent-service
     volumes:
       - ./services/api-gateway:/app
     networks:
@@ -90,8 +141,11 @@ services:
 volumes:
   postgres_auth_data:
     name: career-platform-postgres-auth-data
+  postgres_profile_data:
+    name: career-platform-postgres-profile-data
 
 networks:
   career-network:
     name: career-platform-network
     driver: bridge
+

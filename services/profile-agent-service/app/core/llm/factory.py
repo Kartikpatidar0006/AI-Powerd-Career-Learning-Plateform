@@ -1,0 +1,33 @@
+"""
+Factory for creating LLM provider instances based on configuration.
+"""
+
+import logging
+from app.core.config import settings
+from app.core.llm.base import BaseLLMProvider
+from app.core.llm.mock_provider import MockLLMProvider
+from app.core.llm.openai_provider import OpenAIProvider
+from app.core.llm.anthropic_provider import AnthropicProvider
+
+logger = logging.getLogger("profile-agent.llm-factory")
+
+
+def get_llm_provider() -> BaseLLMProvider:
+    """
+    Factory function returning the configured LLM provider instance.
+
+    Controlled by the LLM_PROVIDER environment variable ('openai', 'anthropic', 'mock').
+    Allows instant provider hot-swapping without touching business logic.
+    """
+    provider_type = settings.LLM_PROVIDER.lower().strip()
+
+    if provider_type == "anthropic":
+        logger.info("Initializing AnthropicProvider (model: %s)", settings.ANTHROPIC_MODEL)
+        return AnthropicProvider()
+    elif provider_type == "mock":
+        logger.info("Initializing MockLLMProvider for offline deterministic execution")
+        return MockLLMProvider()
+    else:
+        # Default to OpenAI
+        logger.info("Initializing OpenAIProvider (model: %s)", settings.OPENAI_MODEL)
+        return OpenAIProvider()

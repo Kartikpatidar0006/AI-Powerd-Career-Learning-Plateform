@@ -11,10 +11,11 @@ import time
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
-import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
+from jose import JWTError, jwt
 
 from app.config import settings
 
@@ -157,4 +158,137 @@ async def proxy_auth(request: Request, path: str) -> Response:
         return JSONResponse(
             status_code=504,
             content={"detail": "Auth service request timed out"},
+        )
+
+
+# ──────────────────────────────────────────────
+# JWT Verification Helper
+# ──────────────────────────────────────────────
+def extract_and_verify_user_id(request: Request) -> str:
+    """
+    Extract and verify JWT access token from Authorization header.
+
+    Validates signature, expiration, and token type before extracting
+    the user UUID subject claim.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        User UUID string extracted from the 'sub' claim.
+
+    Raises:
+        HTTPException(401): If token is missing, expired, or invalid.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided",
+        )
+
+    token = auth_header[7:].strip()
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+
+        # Enforce that only short-lived access tokens are accepted for API calls
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type — access token required",
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token payload missing subject identifier",
+            )
+
+        return str(user_id)
+
+    except JWTError as exc:
+        logger.warning("Gateway rejected invalid/expired JWT: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token",
+        ) from exc
+
+
+# ──────────────────────────────────────────────
+# Profile Service Proxy (Authenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/profile/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Profile Proxy"],
+    summary="Authenticated Proxy to Profile Agent Service",
+)
+async def proxy_profile(request: Request, path: str) -> Response:
+    """
+    Authenticated reverse proxy for profile-agent-service.
+
+    Enforces JWT verification at the gateway layer BEFORE forwarding.
+    Extracts the user_id from the verified token and forwards it via
+    the trusted internal header 'X-User-Id'. Strips any spoofed client
+    'X-User-Id' headers before dispatching downstream.
+
+    Args:
+        request: Incoming client request.
+        path: Path suffix after /profile/.
+
+    Returns:
+        Proxied response from profile-agent-service.
+    """
+    # 1. Enforce JWT authentication and extract user_id
+    user_id = extract_and_verify_user_id(request)
+
+    client: httpx.AsyncClient = request.app.state.http_client
+    target_url = f"{settings.PROFILE_SERVICE_URL}/profile/{path}"
+
+    # 2. Forward headers, strip client-supplied X-User-Id, and inject trusted header
+    forward_headers = dict(request.headers)
+    forward_headers.pop("host", None)
+    forward_headers.pop("x-user-id", None)  # Strip spoofed header if present
+    forward_headers["X-User-Id"] = user_id
+
+    try:
+        body = await request.body()
+        proxied_response = await client.request(
+            method=request.method,
+            url=target_url,
+            headers=forward_headers,
+            params=dict(request.query_params),
+            content=body,
+            timeout=45.0,  # Generous timeout to allow LLM processing
+        )
+
+        return Response(
+            content=proxied_response.content,
+            status_code=proxied_response.status_code,
+            headers=dict(proxied_response.headers),
+            media_type=proxied_response.headers.get("content-type"),
+        )
+
+    except httpx.ConnectError:
+        logger.error(
+            "Failed to connect to profile-agent-service at %s",
+            settings.PROFILE_SERVICE_URL,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "Profile agent service is unavailable"},
+        )
+    except httpx.TimeoutException:
+        logger.error(
+            "Timeout connecting to profile-agent-service at %s",
+            settings.PROFILE_SERVICE_URL,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"detail": "Profile agent service request timed out"},
         )

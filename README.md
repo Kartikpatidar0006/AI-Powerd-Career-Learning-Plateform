@@ -2,7 +2,7 @@
 
 > A production-grade, microservices-based platform that leverages AI to deliver personalized career learning paths, skill tracking, and intelligent recommendations.
 
-**Current Phase:** Week 1 — Foundation & Auth Infrastructure
+**Current Phase:** Week 2 — Profile & Dashboard Agent (Agent 1) Complete
 
 ---
 
@@ -11,177 +11,109 @@
 ```
 career-platform/
 ├── services/
-│   ├── api-gateway/            # FastAPI reverse proxy — single entry point
+│   ├── api-gateway/            # FastAPI reverse proxy — single entry point & JWT verifier
 │   │   ├── app/
-│   │   │   ├── main.py         # Gateway app with proxy routes
-│   │   │   └── config.py       # Service URLs and CORS config
+│   │   │   ├── main.py         # Gateway app with auth & authenticated profile proxies
+│   │   │   └── config.py       # Service URLs, JWT settings, and CORS config
+│   │   ├── tests/              # Gateway JWT validation tests
 │   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
-│   └── auth-service/           # Authentication microservice
+│   ├── auth-service/           # Authentication microservice (Week 1 + Hardened)
+│   │   ├── app/
+│   │   │   ├── core/           # Config, security (bcrypt, tokens), dependencies
+│   │   │   ├── db/             # SQLAlchemy async session & base
+│   │   │   ├── models/         # User & RefreshToken ORM models
+│   │   │   ├── schemas/        # Pydantic v2 schemas (with password strength validation)
+│   │   │   ├── routers/        # Rate-limited auth routes (signup, login, refresh, logout)
+│   │   │   ├── services/       # DB-backed token rotation & auth business logic
+│   │   │   └── main.py         # FastAPI application entry point
+│   │   ├── alembic/            # Database migrations (001_initial, 002_refresh_tokens)
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   │
+│   └── profile-agent-service/  # Agent 1: Profile & Dashboard Agent (Week 2)
 │       ├── app/
-│       │   ├── core/           # Config, security, dependencies
-│       │   ├── db/             # SQLAlchemy session & base
-│       │   ├── models/         # ORM models (User)
-│       │   ├── schemas/        # Pydantic v2 request/response schemas
-│       │   ├── routers/        # API route handlers
-│       │   ├── services/       # Business logic layer
-│       │   └── main.py         # FastAPI application entry point
-│       ├── alembic/            # Database migrations
-│       ├── alembic.ini
+│       │   ├── core/
+│       │   │   ├── config.py   # DB, LLM provider, and model configurations
+│       │   │   └── llm/        # Swappable LLM provider abstraction (OpenAI, Anthropic, Mock)
+│       │   ├── db/             # Async SQLAlchemy session & base
+│       │   ├── models/         # StudentProfile ORM model (JSONB, lock flag)
+│       │   ├── schemas/        # Pydantic v2 schemas for skills, dashboard, and onboarding
+│       │   ├── routers/        # /profile/onboarding, /profile/me
+│       │   ├── services/
+│       │   │   ├── profile_agent.py   # Agent 1 prompt orchestration, 1-shot retry, scoring
+│       │   │   └── profile_service.py # Domain logic & lock enforcement
+│       │   └── main.py         # FastAPI entry point
+│       ├── alembic/            # Database migrations for profile database
+│       ├── tests/              # Unit & integration tests for Agent 1
 │       ├── Dockerfile
 │       └── requirements.txt
 │
-├── frontend/                   # React + TypeScript + Vite
+├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS v4
 │   └── src/
-│       ├── components/         # Reusable UI components
-│       ├── context/            # React context providers (Auth)
-│       ├── pages/              # Page components
-│       ├── routes/             # Router configuration
-│       ├── services/           # API client and service modules
-│       └── types/              # TypeScript type definitions
+│       ├── components/         # ProtectedRoute, UI components
+│       ├── context/            # React AuthContext (async logout, state)
+│       ├── pages/              # LoginPage, SignupPage, OnboardingPage, DashboardPage
+│       ├── routes/             # Profile-lock aware routing
+│       ├── services/           # Axios API client, auth & profile service callers
+│       └── types/              # TypeScript definitions for auth and profile
 │
-├── docker-compose.yml          # Orchestrates all services
-├── .env                        # Environment variables
+├── docker-compose.yml          # Orchestrates all 4 services and 2 PostgreSQL databases
+├── .env.example                # Template with placeholder credentials
+├── .env                        # Local environment configuration
 └── README.md
 ```
 
 ## 🛠 Tech Stack
 
-| Layer        | Technology                                          |
-| ------------ | --------------------------------------------------- |
-| Backend      | Python 3.12, FastAPI (async), SQLAlchemy 2.0 (async) |
-| Frontend     | React 19, TypeScript, Vite, Tailwind CSS v4          |
-| Database     | PostgreSQL 16 (separate DB per service)              |
-| Auth         | JWT (access + refresh tokens), bcrypt                |
-| Migrations   | Alembic (async)                                      |
-| Container    | Docker + Docker Compose                              |
+| Layer        | Technology                                                  |
+| ------------ | ----------------------------------------------------------- |
+| Backend      | Python 3.12, FastAPI (async), SQLAlchemy 2.0 (async)        |
+| AI / LLM     | Swappable Provider Abstraction (OpenAI, Anthropic, Mock)   |
+| Frontend     | React 19, TypeScript, Vite, Tailwind CSS v4                 |
+| Database     | PostgreSQL 16 (Dedicated `auth_db` and `profile_db`)        |
+| Auth         | Gateway-verified JWT (access + DB-backed refresh tokens)    |
+| Validation   | Pydantic v2 for request inputs & strict LLM output parsing  |
+| Migrations   | Alembic (async)                                             |
+| Container    | Docker + Docker Compose with healthchecks                   |
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
-- That's it! Everything runs in containers.
-
-### Run the entire platform
-
+### 1. Configure Environment
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd career-platform
-
-# Copy environment template and configure
 cp .env.example .env
-# Edit .env with your preferred settings (defaults work for development)
+# Edit .env with your preferred settings or LLM keys
+# (Works out of the box with intelligent MockLLM fallback if no OpenAI key is set)
+```
 
-# Start all services
+### 2. Start All Containers
+```bash
 docker-compose up --build
 ```
 
-### Access the services
+### 3. Service Ports & Swagger Endpoints
 
-| Service        | URL                          | Description                     |
-| -------------- | ---------------------------- | ------------------------------- |
-| **Frontend**   | http://localhost:5173         | React application               |
-| **API Gateway**| http://localhost:8000         | Single API entry point          |
-| **Auth Service** (direct) | http://localhost:8001 | Auth microservice (internal)   |
-| **Gateway Docs** | http://localhost:8000/docs  | API Gateway Swagger UI          |
-| **Auth Docs**  | http://localhost:8001/docs    | Auth Service Swagger UI         |
+| Service               | Container / Local Port | Documentation URL            |
+| --------------------- | ---------------------- | ---------------------------- |
+| **Frontend**          | http://localhost:5173  | —                            |
+| **API Gateway**       | http://localhost:8000  | http://localhost:8000/docs   |
+| **Auth Service**      | http://localhost:8001  | http://localhost:8001/docs   |
+| **Profile Agent**     | http://localhost:8002  | http://localhost:8002/docs   |
+| **PostgreSQL (Auth)** | `localhost:5433`       | —                            |
+| **PostgreSQL (Profile)** | `localhost:5434`    | —                            |
 
-### Test the auth flow
+---
 
-1. Open **http://localhost:5173** in your browser
-2. Click **Create one** to go to the signup page
-3. Register with an email and password (min. 8 characters)
-4. You'll be automatically logged in and redirected to the Dashboard
-5. The Dashboard shows your profile info and placeholder stats
-6. Click **Sign out** to log out
+## 🔒 Lock Mechanism & Security Architecture
 
-### Test with cURL
+1. **Gateway-Level JWT Verification:**
+   All `/profile/*` requests are intercepted by the API Gateway. The Gateway verifies the JWT access token signature, expiration, and claims. The verified user UUID is extracted from the `sub` claim and injected into a trusted `X-User-Id` header. Any client-sent `X-User-Id` header is stripped to eliminate spoofing attacks.
 
-```bash
-# 1. Sign up
-curl -X POST http://localhost:8000/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "password": "secureP@ss123"}'
+2. **Application-Level Lock Enforcement:**
+   - When a student completes the onboarding wizard (`POST /profile/onboarding`), Agent 1 structures their profile and immediately marks `is_locked = True`.
+   - If `POST /profile/onboarding` is called again for that user, the service immediately returns `HTTP 403 Forbidden` (`{"detail": "Profile already exists and is locked"}`).
+   - Strictly **no** `PUT` or `PATCH` endpoints are exposed in the codebase for onboarding fields.
 
-# 2. Log in (returns access + refresh tokens)
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "password": "secureP@ss123"}'
-
-# 3. Get current user (replace <TOKEN> with access_token from step 2)
-curl http://localhost:8000/auth/me \
-  -H "Authorization: Bearer <TOKEN>"
-
-# 4. Refresh token (replace <REFRESH_TOKEN> from step 2)
-curl -X POST http://localhost:8000/auth/refresh-token \
-  -H "Content-Type: application/json" \
-  -d '{"refresh_token": "<REFRESH_TOKEN>"}'
-
-# 5. Health checks
-curl http://localhost:8000/health
-curl http://localhost:8001/health
-```
-
-## 📁 Service Details
-
-### Auth Service (port 8001)
-
-| Endpoint               | Method | Auth | Description                    |
-| ---------------------- | ------ | ---- | ------------------------------ |
-| `/auth/signup`         | POST   | ❌   | Register a new user            |
-| `/auth/login`          | POST   | ❌   | Authenticate, get JWT tokens   |
-| `/auth/refresh-token`  | POST   | ❌   | Refresh expired access token   |
-| `/auth/me`             | GET    | ✅   | Get current user profile       |
-| `/health`              | GET    | ❌   | Service health check           |
-
-### API Gateway (port 8000)
-
-- Proxies all `/auth/*` requests to the auth-service
-- CORS configured for frontend origins
-- Request logging middleware (method, path, response time)
-- Health check at `/health`
-
-## 🗄 Database
-
-- **PostgreSQL 16 Alpine** running on port `5433` (mapped from container's `5432`)
-- Dedicated database `auth_db` for the auth service
-- Migrations managed by **Alembic** (async-compatible)
-- Named volume `career-platform-postgres-auth-data` for data persistence
-
-### Running migrations manually
-
-```bash
-# Inside the auth-service container
-docker-compose exec auth-service alembic upgrade head
-
-# Generate a new migration after model changes
-docker-compose exec auth-service alembic revision --autogenerate -m "description"
-```
-
-## 🔒 Security
-
-- Passwords hashed with **bcrypt** (passlib)
-- **JWT access tokens** expire in 30 minutes (configurable)
-- **JWT refresh tokens** expire in 7 days (configurable)
-- Token type validation (access vs refresh) prevents token misuse
-- All secrets configurable via environment variables
-- CORS restricted to configured frontend origins
-
-## 📋 Week 1 Checklist
-
-- [x] Auth service with signup, login, refresh, and profile endpoints
-- [x] Async SQLAlchemy with PostgreSQL (asyncpg driver)
-- [x] Alembic migrations (no `create_all` in production code)
-- [x] JWT access + refresh token flow with bcrypt password hashing
-- [x] API Gateway with reverse proxy, CORS, and request logging
-- [x] Docker Compose with healthchecks, named volumes, and env vars
-- [x] React + TypeScript frontend with auth pages and protected routes
-- [x] Axios interceptors for automatic token management
-- [x] Production-grade code: typing, docstrings, error handling, separation of concerns
-
-## 📄 License
-
-Private — All rights reserved.
+3. **Database-Level Hardening Readiness:**
+   The `StudentProfile` model explicitly documents a PostgreSQL `BEFORE UPDATE` trigger strategy to enforce immutability at the storage engine level.
