@@ -4,6 +4,11 @@ API Gateway — FastAPI application entry point.
 Acts as the single entry point for the frontend, routing requests
 to internal microservices. Includes CORS configuration and
 request logging middleware.
+
+Week 3 changes:
+- Added ROADMAP_SERVICE_URL to route /roadmap/* and /tasks/*
+- Generic proxy_authenticated() helper eliminates copy-paste across routes
+- Added blocking of /internal/* and /dev/* at the gateway level
 """
 
 import logging
@@ -101,64 +106,46 @@ async def health_check() -> dict[str, str]:
 
 
 # ──────────────────────────────────────────────
-# Auth Service Proxy
+# Block /internal/* and /dev/* at the gateway
 # ──────────────────────────────────────────────
 @app.api_route(
-    "/auth/{path:path}",
+    "/internal/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    tags=["Auth Proxy"],
-    summary="Proxy to Auth Service",
+    tags=["Blocked Routes"],
+    include_in_schema=False,
 )
-async def proxy_auth(request: Request, path: str) -> Response:
+async def block_internal(path: str) -> JSONResponse:
     """
-    Reverse proxy for auth-service.
+    Block all /internal/* requests at the gateway.
 
-    Forwards all /auth/* requests to the internal auth-service,
-    preserving headers, query parameters, and request body.
-
-    Args:
-        request: The incoming client request.
-        path: The path suffix after /auth/.
-
-    Returns:
-        The proxied response from auth-service.
+    Internal endpoints are for service-to-service communication only
+    and must never be reachable from external clients.
     """
-    client: httpx.AsyncClient = request.app.state.http_client
-    target_url = f"{settings.AUTH_SERVICE_URL}/auth/{path}"
+    logger.warning("Gateway blocked /internal/%s — this path is not externally accessible", path)
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": "Not found"},
+    )
 
-    # Prepare forwarded headers (exclude hop-by-hop headers)
-    headers = dict(request.headers)
-    headers.pop("host", None)
 
-    try:
-        body = await request.body()
-        proxied_response = await client.request(
-            method=request.method,
-            url=target_url,
-            headers=headers,
-            params=dict(request.query_params),
-            content=body,
-        )
+@app.api_route(
+    "/dev/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Blocked Routes"],
+    include_in_schema=False,
+)
+async def block_dev(path: str) -> JSONResponse:
+    """
+    Block all /dev/* requests at the gateway.
 
-        return Response(
-            content=proxied_response.content,
-            status_code=proxied_response.status_code,
-            headers=dict(proxied_response.headers),
-            media_type=proxied_response.headers.get("content-type"),
-        )
-
-    except httpx.ConnectError:
-        logger.error("Failed to connect to auth-service at %s", settings.AUTH_SERVICE_URL)
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Auth service is unavailable"},
-        )
-    except httpx.TimeoutException:
-        logger.error("Timeout connecting to auth-service at %s", settings.AUTH_SERVICE_URL)
-        return JSONResponse(
-            status_code=504,
-            content={"detail": "Auth service request timed out"},
-        )
+    Dev endpoints are only accessible directly on the service port
+    in development environments and must never be proxied externally.
+    """
+    logger.warning("Gateway blocked /dev/%s — this path is not externally accessible", path)
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": "Not found"},
+    )
 
 
 # ──────────────────────────────────────────────
@@ -220,6 +207,193 @@ def extract_and_verify_user_id(request: Request) -> str:
 
 
 # ──────────────────────────────────────────────
+# Per-User Rate Limiter for Expensive LLM Routes
+# (3 requests per minute per user on /roadmap/generate and /tasks/next)
+# ──────────────────────────────────────────────
+import threading
+
+class UserRateLimiter:
+    """Thread-safe sliding-window rate limiter per user ID and endpoint."""
+
+    def __init__(self, max_requests: int = 3, window_seconds: float = 60.0):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._history: dict[str, list[float]] = {}
+
+    def is_allowed(self, user_id: str, endpoint: str) -> tuple[bool, int]:
+        key = f"{user_id}:{endpoint}"
+        now = time.time()
+        with self._lock:
+            timestamps = self._history.get(key, [])
+            cutoff = now - self.window_seconds
+            valid = [t for t in timestamps if t > cutoff]
+            if len(valid) >= self.max_requests:
+                retry_after = max(1, int(self.window_seconds - (now - valid[0])))
+                self._history[key] = valid
+                return False, retry_after
+            valid.append(now)
+            self._history[key] = valid
+            return True, 0
+
+
+rate_limiter = UserRateLimiter(max_requests=3, window_seconds=60.0)
+
+
+# ──────────────────────────────────────────────
+# Generic Authenticated Proxy Helper
+# (Refactored to eliminate copy-paste across routes)
+# ──────────────────────────────────────────────
+async def proxy_authenticated(
+    request: Request,
+    target_url: str,
+    service_name: str,
+    timeout: float = 45.0,
+    rate_limit_endpoint: str | None = None,
+) -> Response:
+    """
+    Generic authenticated reverse proxy with JWT enforcement, defense-in-depth token,
+    and trusted X-User-Id injection.
+
+    Enforces JWT verification, strips client-supplied X-User-Id to prevent spoofing,
+    injects verified user_id and X-Gateway-Token header, and checks rate limits.
+
+    Args:
+        request: Incoming client request.
+        target_url: Full URL of the downstream service endpoint.
+        service_name: Human-readable service name for error messages.
+        timeout: Request timeout in seconds.
+        rate_limit_endpoint: Name of the endpoint if rate limiting applies.
+
+    Returns:
+        Proxied response from the downstream service.
+    """
+    # 1. Enforce JWT authentication and extract user_id
+    user_id = extract_and_verify_user_id(request)
+
+    # 2. Check per-user rate limit for expensive endpoints (e.g. 3/min)
+    if rate_limit_endpoint:
+        allowed, retry_after = rate_limiter.is_allowed(user_id, rate_limit_endpoint)
+        if not allowed:
+            logger.warning("User %s rate limited on %s (retry after %ss)", user_id, rate_limit_endpoint, retry_after)
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": "Rate limit exceeded. Maximum 3 requests per minute for this endpoint."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    client: httpx.AsyncClient = request.app.state.http_client
+
+    # 3. Forward headers, strip client-supplied X-User-Id and X-Gateway-Token, inject trusted headers
+    forward_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "x-user-id", "x-gateway-token")
+    }
+    forward_headers["X-User-Id"] = user_id
+    forward_headers["X-Gateway-Token"] = settings.GATEWAY_SERVICE_TOKEN
+
+    try:
+        body = await request.body()
+        proxied_response = await client.request(
+            method=request.method,
+            url=target_url,
+            headers=forward_headers,
+            params=dict(request.query_params),
+            content=body,
+            timeout=timeout,
+        )
+
+        return Response(
+            content=proxied_response.content,
+            status_code=proxied_response.status_code,
+            headers=dict(proxied_response.headers),
+            media_type=proxied_response.headers.get("content-type"),
+        )
+
+    except httpx.ConnectError:
+        logger.error(
+            "Failed to connect to %s at %s", service_name, target_url
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": f"{service_name} is unavailable"},
+        )
+    except httpx.TimeoutException:
+        logger.error(
+            "Timeout connecting to %s at %s", service_name, target_url
+        )
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"detail": f"{service_name} request timed out"},
+        )
+
+
+# ──────────────────────────────────────────────
+# Auth Service Proxy (unauthenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/auth/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Auth Proxy"],
+    summary="Proxy to Auth Service",
+)
+async def proxy_auth(request: Request, path: str) -> Response:
+    """
+    Reverse proxy for auth-service.
+
+    Forwards all /auth/* requests to the internal auth-service,
+    preserving headers, query parameters, and request body.
+
+    Args:
+        request: The incoming client request.
+        path: The path suffix after /auth/.
+
+    Returns:
+        The proxied response from auth-service.
+    """
+    client: httpx.AsyncClient = request.app.state.http_client
+    target_url = f"{settings.AUTH_SERVICE_URL}/auth/{path}"
+
+    # Prepare forwarded headers (exclude hop-by-hop headers, strip client tokens, inject gateway token)
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "x-user-id", "x-gateway-token")
+    }
+    headers["X-Gateway-Token"] = settings.GATEWAY_SERVICE_TOKEN
+
+    try:
+        body = await request.body()
+        proxied_response = await client.request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            params=dict(request.query_params),
+            content=body,
+            timeout=settings.DEFAULT_TIMEOUT,
+        )
+
+        return Response(
+            content=proxied_response.content,
+            status_code=proxied_response.status_code,
+            headers=dict(proxied_response.headers),
+            media_type=proxied_response.headers.get("content-type"),
+        )
+
+    except httpx.ConnectError:
+        logger.error("Failed to connect to auth-service at %s", settings.AUTH_SERVICE_URL)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Auth service is unavailable"},
+        )
+    except httpx.TimeoutException:
+        logger.error("Timeout connecting to auth-service at %s", settings.AUTH_SERVICE_URL)
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "Auth service request timed out"},
+        )
+
+
+# ──────────────────────────────────────────────
 # Profile Service Proxy (Authenticated)
 # ──────────────────────────────────────────────
 @app.api_route(
@@ -236,59 +410,65 @@ async def proxy_profile(request: Request, path: str) -> Response:
     Extracts the user_id from the verified token and forwards it via
     the trusted internal header 'X-User-Id'. Strips any spoofed client
     'X-User-Id' headers before dispatching downstream.
-
-    Args:
-        request: Incoming client request.
-        path: Path suffix after /profile/.
-
-    Returns:
-        Proxied response from profile-agent-service.
     """
-    # 1. Enforce JWT authentication and extract user_id
-    user_id = extract_and_verify_user_id(request)
+    timeout = settings.LLM_ROUTE_TIMEOUT if path.rstrip("/") == "onboarding" else settings.DEFAULT_TIMEOUT
+    return await proxy_authenticated(
+        request=request,
+        target_url=f"{settings.PROFILE_SERVICE_URL}/profile/{path}",
+        service_name="Profile agent service",
+        timeout=timeout,
+    )
 
-    client: httpx.AsyncClient = request.app.state.http_client
-    target_url = f"{settings.PROFILE_SERVICE_URL}/profile/{path}"
 
-    # 2. Forward headers, strip client-supplied X-User-Id, and inject trusted header
-    forward_headers = dict(request.headers)
-    forward_headers.pop("host", None)
-    forward_headers.pop("x-user-id", None)  # Strip spoofed header if present
-    forward_headers["X-User-Id"] = user_id
+# ──────────────────────────────────────────────
+# Roadmap Service Proxy (Authenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/roadmap/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Roadmap Proxy"],
+    summary="Authenticated Proxy to Roadmap Agent Service",
+)
+async def proxy_roadmap(request: Request, path: str) -> Response:
+    """
+    Authenticated reverse proxy for roadmap-agent-service (/roadmap/* routes).
+    Applies per-user rate limit (3/min) and LLM-extended timeout on /roadmap/generate.
+    """
+    is_generate = request.method == "POST" and path.rstrip("/") == "generate"
+    timeout = settings.LLM_ROUTE_TIMEOUT if is_generate else settings.DEFAULT_TIMEOUT
+    rate_endpoint = "/roadmap/generate" if is_generate else None
 
-    try:
-        body = await request.body()
-        proxied_response = await client.request(
-            method=request.method,
-            url=target_url,
-            headers=forward_headers,
-            params=dict(request.query_params),
-            content=body,
-            timeout=45.0,  # Generous timeout to allow LLM processing
-        )
+    return await proxy_authenticated(
+        request=request,
+        target_url=f"{settings.ROADMAP_SERVICE_URL}/roadmap/{path}",
+        service_name="Roadmap agent service",
+        timeout=timeout,
+        rate_limit_endpoint=rate_endpoint,
+    )
 
-        return Response(
-            content=proxied_response.content,
-            status_code=proxied_response.status_code,
-            headers=dict(proxied_response.headers),
-            media_type=proxied_response.headers.get("content-type"),
-        )
 
-    except httpx.ConnectError:
-        logger.error(
-            "Failed to connect to profile-agent-service at %s",
-            settings.PROFILE_SERVICE_URL,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": "Profile agent service is unavailable"},
-        )
-    except httpx.TimeoutException:
-        logger.error(
-            "Timeout connecting to profile-agent-service at %s",
-            settings.PROFILE_SERVICE_URL,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            content={"detail": "Profile agent service request timed out"},
-        )
+# ──────────────────────────────────────────────
+# Tasks Service Proxy (Authenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/tasks/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Tasks Proxy"],
+    summary="Authenticated Proxy to Roadmap Agent Service (Tasks)",
+)
+async def proxy_tasks(request: Request, path: str) -> Response:
+    """
+    Authenticated reverse proxy for roadmap-agent-service (/tasks/* routes).
+    Applies per-user rate limit (3/min) and LLM-extended timeout on /tasks/next.
+    """
+    is_next = request.method == "POST" and path.rstrip("/") == "next"
+    timeout = settings.LLM_ROUTE_TIMEOUT if is_next else settings.DEFAULT_TIMEOUT
+    rate_endpoint = "/tasks/next" if is_next else None
+
+    return await proxy_authenticated(
+        request=request,
+        target_url=f"{settings.ROADMAP_SERVICE_URL}/tasks/{path}",
+        service_name="Roadmap agent service",
+        timeout=timeout,
+        rate_limit_endpoint=rate_endpoint,
+    )

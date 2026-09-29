@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import settings
 from app.core.llm.base import (
     BaseLLMProvider,
     LLMProviderError,
@@ -272,6 +273,7 @@ class TestLLMFailurePathsEndToEnd(unittest.TestCase):
 
     def setUp(self) -> None:
         self.client = TestClient(app)
+        self.client.headers["X-Gateway-Token"] = settings.GATEWAY_SERVICE_TOKEN
         self.user_id = str(uuid.uuid4())
         self.payload = {
             "education": {
@@ -292,6 +294,38 @@ class TestLLMFailurePathsEndToEnd(unittest.TestCase):
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
+
+    def test_missing_gateway_token_returns_403(self) -> None:
+        """Requests without X-Gateway-Token must be rejected with 403 Forbidden."""
+        client_no_token = TestClient(app)
+        response = client_no_token.post(
+            "/profile/onboarding",
+            json=self.payload,
+            headers={"X-User-Id": self.user_id},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Forbidden", response.json()["detail"])
+
+    def test_invalid_gateway_token_returns_403(self) -> None:
+        """Requests with wrong X-Gateway-Token must be rejected with 403 Forbidden."""
+        client_bad_token = TestClient(app)
+        response = client_bad_token.post(
+            "/profile/onboarding",
+            json=self.payload,
+            headers={
+                "X-User-Id": self.user_id,
+                "X-Gateway-Token": "wrong-secret-token",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Forbidden", response.json()["detail"])
+
+    def test_health_exempt_from_gateway_token(self) -> None:
+        """Health check endpoint must be accessible without X-Gateway-Token."""
+        client_no_token = TestClient(app)
+        response = client_no_token.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "healthy")
 
     def test_llm_timeout_returns_clean_504(self) -> None:
         """Simulate LLM API timeout and verify client gets clean 504 Gateway Timeout."""

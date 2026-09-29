@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────────────────────────
+# AI Powered Career Learning Platform — Docker Compose Development Override
+# Publishes internal microservices and database ports to host for local debugging.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# ──────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL Databases ──────────────────────────────────────────
+  postgres-auth:
+    ports:
+      - "5433:5432"
+
+  postgres-profile:
+    ports:
+      - "5434:5432"
+
+  postgres-roadmap:
+    ports:
+      - "5435:5432"
+
+  # ── Downstream Microservices ──────────────────────────────────────
+  auth-service:
+    ports:
+      - "8001:8001"
+
+  profile-agent-service:
+    ports:
+      - "8002:8002"
+
+  roadmap-agent-service:
+    ports:
+      - "8003:8003"
+    environment:
+      APP_ENV: development

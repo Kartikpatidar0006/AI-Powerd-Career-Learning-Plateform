@@ -1,0 +1,15 @@
+2026-09-28 13:21:29.135 IST [25124] LOG:  starting PostgreSQL 17.10 on x86_64-windows, compiled by msvc-19.44.35227, 64-bit
+2026-09-28 13:21:29.139 IST [25124] LOG:  listening on IPv6 address "::1", port 5435
+2026-09-28 13:21:29.139 IST [25124] LOG:  listening on IPv4 address "127.0.0.1", port 5435
+2026-09-28 13:21:29.179 IST [25356] LOG:  database system was interrupted; last known up at 2026-09-28 13:12:22 IST
+2026-09-28 13:21:34.794 IST [25356] LOG:  could not open file "./server.log": sharing violation
+2026-09-28 13:21:34.794 IST [25356] DETAIL:  Continuing to retry for 30 seconds.
+2026-09-28 13:21:34.794 IST [25356] HINT:  You might have antivirus, backup, or similar software interfering with the database system.
+2026-09-28 13:22:02.332 IST [25356] LOG:  syncing data directory (fsync), elapsed time: 33.15 s, current path: .
+2026-09-28 13:22:02.333 IST [25356] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-09-28 13:22:02.335 IST [25356] LOG:  redo starts at 0/1572340
+2026-09-28 13:22:02.337 IST [25356] LOG:  invalid record length at 0/15BA368: expected at least 24, got 0
+2026-09-28 13:22:02.337 IST [25356] LOG:  redo done at 0/15BA330 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-09-28 13:22:02.341 IST [18904] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-09-28 13:22:02.351 IST [18904] LOG:  checkpoint complete: wrote 44 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.005 s, total=0.013 s; sync files=11, longest=0.001 s, average=0.001 s; distance=288 kB, estimate=288 kB; lsn=0/15BA368, redo lsn=0/15BA368
+2026-09-28 13:22:02.381 IST [25124] LOG:  database system is ready to accept connections

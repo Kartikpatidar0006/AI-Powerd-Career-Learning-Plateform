@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────────────────────────────
 # AI Powered Career Learning Platform — Docker Compose
-# Week 1: Foundation & Auth Infrastructure
+# Week 3: Roadmap & Task Generator (Agent 2)
 # ──────────────────────────────────────────────────────────────────────
 
 services:
@@ -12,8 +12,8 @@ services:
       POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
       POSTGRES_USER: ${AUTH_DB_USER:-auth_user}
       POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth_pass}
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_auth_data:/var/lib/postgresql/data
     healthcheck:
@@ -35,12 +35,13 @@ services:
       DATABASE_URL: postgresql+asyncpg://${AUTH_DB_USER:-auth_user}:${AUTH_DB_PASSWORD:-auth_pass}@postgres-auth:5432/${AUTH_DB_NAME:-auth_db}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-a-strong-secret}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     depends_on:
       postgres-auth:
         condition: service_healthy
@@ -58,8 +59,8 @@ services:
       POSTGRES_DB: ${PROFILE_DB_NAME:-profile_db}
       POSTGRES_USER: ${PROFILE_DB_USER:-profile_user}
       POSTGRES_PASSWORD: ${PROFILE_DB_PASSWORD:-profile_pass}
-    ports:
-      - "5434:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_profile_data:/var/lib/postgresql/data
     healthcheck:
@@ -84,16 +85,71 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     depends_on:
       postgres-profile:
         condition: service_healthy
     command: ["bash", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload"]
     volumes:
       - ./services/profile-agent-service:/app
+    networks:
+      - career-network
+
+  # ── PostgreSQL for Roadmap Agent Service ───────────────────────────
+  postgres-roadmap:
+    image: postgres:16-alpine
+    container_name: career-platform-postgres-roadmap
+    environment:
+      POSTGRES_DB: ${ROADMAP_DB_NAME:-roadmap_db}
+      POSTGRES_USER: ${ROADMAP_DB_USER:-roadmap_user}
+      POSTGRES_PASSWORD: ${ROADMAP_DB_PASSWORD:-roadmap_pass}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_roadmap_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ROADMAP_DB_USER:-roadmap_user} -d ${ROADMAP_DB_NAME:-roadmap_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - career-network
+
+  # ── Roadmap & Task Agent Service (Agent 2) ─────────────────────────
+  roadmap-agent-service:
+    build:
+      context: ./services/roadmap-agent-service
+      dockerfile: Dockerfile
+    container_name: career-platform-roadmap-agent-service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${ROADMAP_DB_USER:-roadmap_user}:${ROADMAP_DB_PASSWORD:-roadmap_pass}@postgres-roadmap:5432/${ROADMAP_DB_NAME:-roadmap_db}
+      PROFILE_SERVICE_INTERNAL_URL: http://profile-agent-service:8002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      APP_ENV: ${APP_ENV:-production}
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    expose:
+      - "8003"
+    depends_on:
+      postgres-roadmap:
+        condition: service_healthy
+      profile-agent-service:
+        condition: service_started
+    command: ["bash", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload"]
+    volumes:
+      - ./services/roadmap-agent-service:/app
     networks:
       - career-network
 
@@ -106,8 +162,10 @@ services:
     environment:
       AUTH_SERVICE_URL: http://auth-service:8001
       PROFILE_SERVICE_URL: http://profile-agent-service:8002
+      ROADMAP_SERVICE_URL: http://roadmap-agent-service:8003
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-a-strong-secret}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
     ports:
@@ -115,6 +173,7 @@ services:
     depends_on:
       - auth-service
       - profile-agent-service
+      - roadmap-agent-service
     volumes:
       - ./services/api-gateway:/app
     networks:
@@ -143,9 +202,10 @@ volumes:
     name: career-platform-postgres-auth-data
   postgres_profile_data:
     name: career-platform-postgres-profile-data
+  postgres_roadmap_data:
+    name: career-platform-postgres-roadmap-data
 
 networks:
   career-network:
     name: career-platform-network
     driver: bridge
-

@@ -27,6 +27,7 @@ class UserSignupRequest(BaseModel):
         max_length=128,
         description="Password (8-128 characters, must contain at least one letter and one number)",
     )
+    full_name: str | None = Field(default=None, description="User full name")
 
     @field_validator("password")
     @classmethod
@@ -96,6 +97,7 @@ class UserResponse(BaseModel):
 
     id: UUID
     email: str
+    full_name: str | None = None
     is_active: bool
     created_at: datetime
 

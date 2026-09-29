@@ -5,10 +5,12 @@ Configures the FastAPI application with routers, CORS middleware,
 rate limiting, and a health check endpoint for Docker container orchestration.
 """
 
+import hmac
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -50,6 +52,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Defense-in-depth: Require X-Gateway-Token from API Gateway for user-facing routes
+@app.middleware("http")
+async def verify_gateway_token_middleware(request: Request, call_next):
+    # Health checks and documentation endpoints are exempt
+    if (
+        request.url.path in ("/health", "/docs", "/redoc", "/openapi.json")
+        or request.url.path.startswith("/internal/")
+    ):
+        return await call_next(request)
+
+    token = request.headers.get("X-Gateway-Token", "")
+    if not token or not hmac.compare_digest(token, settings.GATEWAY_SERVICE_TOKEN):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Forbidden: missing or invalid gateway token"},
+        )
+    return await call_next(request)
 
 # Register routers
 app.include_router(auth_router)

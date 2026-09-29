@@ -25,6 +25,11 @@ def get_llm_provider() -> BaseLLMProvider:
         logger.info("Initializing AnthropicProvider (model: %s)", settings.ANTHROPIC_MODEL)
         return AnthropicProvider()
     elif provider_type == "mock":
+        if settings.APP_ENV == "production":
+            raise ValueError(
+                "Mock LLM provider is strictly disallowed when APP_ENV=production. "
+                "Configure a real LLM provider (openai, anthropic) or set APP_ENV=development for offline testing."
+            )
         logger.info("Initializing MockLLMProvider for offline deterministic execution")
         return MockLLMProvider()
     else:

@@ -42,6 +42,7 @@ export interface StudentProfile {
   target_role: string;
   experience_level: ExperienceLevel;
   dashboard_data: DashboardData;
+  readiness_score?: number;
   is_locked: boolean;
   created_at: string;
   updated_at: string;

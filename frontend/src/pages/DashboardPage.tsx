@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getMyProfile } from '../services/profile';
+import { getMyRoadmap } from '../services/roadmap';
+import type { Roadmap } from '../services/roadmap';
 import type { SkillItem, StudentProfile } from '../types/profile';
 
 export default function DashboardPage() {
@@ -24,16 +26,23 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showRawInput, setShowRawInput] = useState(false);
+  const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function fetchProfile() {
+    async function loadData() {
       try {
         const data = await getMyProfile();
         if (isMounted) {
           setProfile(data);
           setIsLoading(false);
+        }
+        try {
+          const rm = await getMyRoadmap();
+          if (isMounted) setRoadmap(rm);
+        } catch {
+          // No roadmap or error - harmless for dashboard
         }
       } catch (err: unknown) {
         // If profile does not exist (404), redirect straight to onboarding
@@ -46,7 +55,7 @@ export default function DashboardPage() {
       }
     }
 
-    fetchProfile();
+    loadData();
     return () => {
       isMounted = false;
     };
@@ -104,6 +113,13 @@ export default function DashboardPage() {
     readinessTier = { label: 'Intermediate Competence', color: 'text-primary-400', stroke: '#38bdf8', bg: 'bg-primary-400/10' };
   }
 
+  // Roadmap progress computation for summary card
+  const currentMilestone = roadmap?.milestones.find((m) => m.state === 'current') ||
+    roadmap?.milestones.find((m) => m.state === 'upcoming');
+  const completedTasksCount = roadmap?.milestones.reduce((acc, m) => acc + m.tasks_completed, 0) || 0;
+  const totalPlannedTasks = roadmap?.milestones.reduce((acc, m) => acc + m.tasks_planned, 0) || 0;
+  const progressPct = totalPlannedTasks > 0 ? Math.round((completedTasksCount / totalPlannedTasks) * 100) : 0;
+
   return (
     <div className="min-h-screen flex flex-col pb-16">
       {/* Navigation bar */}
@@ -118,12 +134,42 @@ export default function DashboardPage() {
             <div>
               <span className="font-semibold text-surface-50 tracking-tight text-sm">Career Platform</span>
               <span className="hidden sm:inline-block ml-2 text-[11px] px-2 py-0.5 rounded-full bg-surface-800 text-surface-200/60 border border-surface-700/50">
-                Agent 1 Active
+                Agents 1 & 2 Active
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Week 3 navigation links */}
+            <nav className="hidden md:flex items-center gap-1">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="px-3 py-1.5 text-xs font-medium text-surface-100 bg-surface-800/80 rounded-lg transition-all"
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => navigate('/roadmap')}
+                id="nav-roadmap"
+                className="px-3 py-1.5 text-xs font-medium text-surface-300 hover:text-surface-100 hover:bg-surface-800/60 rounded-lg transition-all"
+              >
+                Roadmap
+              </button>
+              <button
+                onClick={() => navigate('/tasks')}
+                id="nav-tasks"
+                className="px-3 py-1.5 text-xs font-medium text-primary-400 hover:text-primary-300 hover:bg-primary-500/10 rounded-lg transition-all border border-primary-500/20"
+              >
+                ⚡ Daily Task
+              </button>
+              <button
+                onClick={() => navigate('/history')}
+                id="nav-history"
+                className="px-3 py-1.5 text-xs font-medium text-surface-300 hover:text-surface-100 hover:bg-surface-800/60 rounded-lg transition-all"
+              >
+                History
+              </button>
+            </nav>
             <span className="text-xs text-surface-200/70 hidden sm:block">{user?.email}</span>
             <button
               onClick={handleLogout}
@@ -311,9 +357,85 @@ export default function DashboardPage() {
             </div>
 
             <p className="text-[11px] text-surface-200/40 mt-4 pt-3 border-t border-surface-700/30">
-              Future Agent 2 will generate learning paths targeting these gaps.
+              Agent 2 generates adaptive learning paths targeting these gaps.
             </p>
           </div>
+        </div>
+
+        {/* Agent 2: Learning Roadmap & Daily Task Progress Summary Card */}
+        <div className="bg-surface-900/50 backdrop-blur-xl border border-surface-700/30 rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-primary-400 animate-pulse" />
+                <span className="text-xs font-bold text-primary-400 uppercase tracking-wider">
+                  Agent 2 • Roadmap & Daily Task
+                </span>
+              </div>
+              {roadmap ? (
+                <div>
+                  <h2 className="text-xl font-bold text-surface-50">
+                    {currentMilestone
+                      ? `Milestone ${currentMilestone.order}: ${currentMilestone.title}`
+                      : 'All Milestones Completed!'}
+                  </h2>
+                  <p className="text-xs text-surface-200/70 mt-1">
+                    {completedTasksCount} of {totalPlannedTasks} tasks completed across {roadmap.milestones.length} milestones
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <h2 className="text-xl font-bold text-surface-50">No Learning Roadmap Yet</h2>
+                  <p className="text-xs text-surface-200/70 mt-1">
+                    Generate an AI-powered personalized curriculum based on your locked profile baseline.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              {roadmap ? (
+                <>
+                  <button
+                    onClick={() => navigate('/roadmap')}
+                    className="px-4 py-2.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-xs font-semibold text-surface-200 transition cursor-pointer"
+                  >
+                    View Roadmap →
+                  </button>
+                  <button
+                    onClick={() => navigate('/tasks')}
+                    id="dashboard-go-to-task-btn"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white text-xs font-semibold shadow-lg shadow-primary-500/20 transition cursor-pointer"
+                  >
+                    ⚡ Continue Daily Task →
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => navigate('/roadmap')}
+                  id="dashboard-generate-roadmap-btn"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white text-xs font-semibold shadow-lg shadow-primary-500/25 transition cursor-pointer"
+                >
+                  ✨ Generate Roadmap →
+                </button>
+              )}
+            </div>
+          </div>
+
+          {roadmap && (
+            <div className="mt-6 pt-5 border-t border-surface-700/30">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-surface-300 font-medium">Curriculum Progress</span>
+                <span className="text-primary-400 font-bold">{progressPct}%</span>
+              </div>
+              <div className="h-2 bg-surface-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-primary-500 to-accent-500 rounded-full transition-all duration-700"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Structured Skills Inventory Matrix */}

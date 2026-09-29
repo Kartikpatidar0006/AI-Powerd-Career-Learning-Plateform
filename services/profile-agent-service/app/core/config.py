@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "Profile Agent Service"
     APP_VERSION: str = "1.0.0"
+    APP_ENV: str = Field(
+        default="production",
+        description="Application environment: development or production",
+    )
     DEBUG: bool = False
 
     # Database (Dedicated PostgreSQL for profile-agent-service)
@@ -48,6 +52,16 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: float = Field(
         default=30.0,
         description="Timeout in seconds for external LLM API calls",
+    )
+
+    # Internal service communication & defense in depth
+    INTERNAL_SERVICE_TOKEN: str = Field(
+        default="change-me-internal-token",
+        description="Shared secret for service-to-service authentication (X-Internal-Token header)",
+    )
+    GATEWAY_SERVICE_TOKEN: str = Field(
+        default="change-me-gateway-token",
+        description="Shared secret header X-Gateway-Token sent by API Gateway for defense in depth",
     )
 
     # CORS

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Internal service communication & defense in depth
+    GATEWAY_SERVICE_TOKEN: str = Field(
+        default="change-me-gateway-token",
+        description="Shared secret header X-Gateway-Token sent by API Gateway for defense in depth",
+    )
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
@@ -40,6 +46,7 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
+        "extra": "ignore",
     }
 
 

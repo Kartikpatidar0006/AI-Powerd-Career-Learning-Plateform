@@ -120,6 +120,7 @@ class StudentProfileResponse(BaseModel):
     target_role: str
     experience_level: str
     dashboard_data: dict[str, Any]
+    readiness_score: int | None = None
     is_locked: bool
     created_at: datetime
     updated_at: datetime

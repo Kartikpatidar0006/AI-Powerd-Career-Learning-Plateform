@@ -9,11 +9,14 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI
+import hmac
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers.profile import router as profile_router
+from app.routers.internal import internal_router
 
 # Configure structured logging
 logging.basicConfig(
@@ -53,8 +56,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Defense-in-depth: Require X-Gateway-Token from API Gateway for user-facing routes
+@app.middleware("http")
+async def verify_gateway_token_middleware(request: Request, call_next):
+    # Health checks, openapi docs, and internal service routes are exempt
+    if (
+        request.url.path in ("/health", "/docs", "/redoc", "/openapi.json")
+        or request.url.path.startswith("/internal/")
+    ):
+        return await call_next(request)
+
+    token = request.headers.get("X-Gateway-Token", "")
+    if not token or not hmac.compare_digest(token, settings.GATEWAY_SERVICE_TOKEN):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Forbidden: missing or invalid gateway token"},
+        )
+    return await call_next(request)
+
 # Include Routers
 app.include_router(profile_router)
+app.include_router(internal_router)  # Service-to-service, not exposed via gateway
 
 
 @app.get("/health", tags=["Health"])
