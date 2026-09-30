@@ -18,6 +18,7 @@ import OnboardingPage from '../pages/OnboardingPage';
 import RoadmapPage from '../pages/RoadmapPage';
 import DailyTaskPage from '../pages/DailyTaskPage';
 import TaskHistoryPage from '../pages/TaskHistoryPage';
+import EvaluationResultPage from '../pages/EvaluationResultPage';
 import ProtectedRoute from '../components/ProtectedRoute';
 
 const router = createBrowserRouter([
@@ -48,6 +49,10 @@ const router = createBrowserRouter([
       {
         path: '/tasks',
         element: <DailyTaskPage />,
+      },
+      {
+        path: '/evaluations/:taskId',
+        element: <EvaluationResultPage />,
       },
       {
         path: '/history',

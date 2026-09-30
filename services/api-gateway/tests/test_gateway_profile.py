@@ -202,6 +202,53 @@ class TestGatewayProfileProxy(unittest.TestCase):
             rb = self.client.post("/tasks/next", headers={"Authorization": f"Bearer {token_b}"})
             self.assertEqual(rb.status_code, 200, "User B should NOT be rate limited by User A")
 
+    def test_rate_limit_task_submit_per_user(self) -> None:
+        """Rate limit (3 req/min) must be enforced on POST /tasks/{id}/submit to prevent LLM spam."""
+        from unittest.mock import AsyncMock, patch
+        import httpx
+
+        mock_resp = httpx.Response(
+            status_code=200,
+            content=b'{"id": "11111111-1111-1111-1111-111111111111", "status": "SUBMITTED"}',
+            headers={"content-type": "application/json"},
+        )
+
+        user_a = str(uuid.uuid4())
+        user_b = str(uuid.uuid4())
+        token_a = self._create_token(user_a)
+        token_b = self._create_token(user_b)
+        task_id = str(uuid.uuid4())
+
+        with patch.object(self.client.app.state.http_client, "request", new_callable=AsyncMock) as mock_req:
+            mock_req.return_value = mock_resp
+
+            # User A: 3 submits allowed
+            for i in range(3):
+                r = self.client.post(
+                    f"/tasks/{task_id}/submit",
+                    json={"github_repo_url": "https://github.com/user/repo"},
+                    headers={"Authorization": f"Bearer {token_a}"},
+                )
+                self.assertEqual(r.status_code, 200, f"Submit {i+1} should succeed")
+
+            # User A: 4th submit gets 429
+            r4 = self.client.post(
+                f"/tasks/{task_id}/submit",
+                json={"github_repo_url": "https://github.com/user/repo"},
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            self.assertEqual(r4.status_code, 429)
+            self.assertIn("Rate limit exceeded", r4.json()["detail"])
+            self.assertIn("Retry-After", r4.headers)
+
+            # User B: 1st submit succeeds (per-user isolation)
+            rb = self.client.post(
+                f"/tasks/{task_id}/submit",
+                json={"github_repo_url": "https://github.com/user/repo"},
+                headers={"Authorization": f"Bearer {token_b}"},
+            )
+            self.assertEqual(rb.status_code, 200, "User B should NOT be rate limited by User A")
+
     def test_gateway_token_injected_and_client_headers_stripped(self) -> None:
         """
         Gateway must inject verified X-Gateway-Token and X-User-Id downstream.

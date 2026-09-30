@@ -459,11 +459,12 @@ async def proxy_roadmap(request: Request, path: str) -> Response:
 async def proxy_tasks(request: Request, path: str) -> Response:
     """
     Authenticated reverse proxy for roadmap-agent-service (/tasks/* routes).
-    Applies per-user rate limit (3/min) and LLM-extended timeout on /tasks/next.
+    Applies per-user rate limit (3/min) on expensive endpoints (/tasks/next and /tasks/*/submit).
     """
     is_next = request.method == "POST" and path.rstrip("/") == "next"
+    is_submit = request.method == "POST" and path.rstrip("/").endswith("/submit")
     timeout = settings.LLM_ROUTE_TIMEOUT if is_next else settings.DEFAULT_TIMEOUT
-    rate_endpoint = "/tasks/next" if is_next else None
+    rate_endpoint = "/tasks/next" if is_next else ("/tasks/submit" if is_submit else None)
 
     return await proxy_authenticated(
         request=request,
@@ -472,3 +473,26 @@ async def proxy_tasks(request: Request, path: str) -> Response:
         timeout=timeout,
         rate_limit_endpoint=rate_endpoint,
     )
+
+
+# ──────────────────────────────────────────────
+# Evaluator Service Proxy (Authenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/evaluations/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Evaluations Proxy"],
+    summary="Authenticated Proxy to Evaluator Agent Service (Agent 3)",
+)
+async def proxy_evaluations(request: Request, path: str) -> Response:
+    """
+    Authenticated reverse proxy for evaluator-agent-service (/evaluations/* routes).
+    Standard timeout — evaluation results are pre-computed by the background pipeline.
+    """
+    return await proxy_authenticated(
+        request=request,
+        target_url=f"{settings.EVALUATOR_SERVICE_URL}/evaluations/{path}",
+        service_name="Evaluator agent service",
+        timeout=settings.DEFAULT_TIMEOUT,
+    )
+

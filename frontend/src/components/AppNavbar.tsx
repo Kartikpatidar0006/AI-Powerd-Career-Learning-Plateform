@@ -1,3 +1,4 @@
+
 /**
  * AppNavbar — Shared navigation bar for authenticated pages.
  *

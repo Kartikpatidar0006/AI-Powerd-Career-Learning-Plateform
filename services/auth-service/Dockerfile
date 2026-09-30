@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Ensure the app package is always importable regardless of how Python is invoked
+ENV PYTHONPATH=/app
+
 # Install system dependencies needed for asyncpg and bcrypt
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \

@@ -1,18 +1,19 @@
 /**
  * DailyTaskPage — The core task flow page.
  *
- * Shows the user's current active task (ASSIGNED / IN_PROGRESS / SUBMITTED)
+ * Shows the user's current active task (ASSIGNED / IN_PROGRESS / SUBMITTED / EVALUATING)
  * or fetches the next task when no active task exists.
  *
  * Task lifecycle:
  * - ASSIGNED: Show task + "Start Working" button
  * - IN_PROGRESS: Show task + GitHub URL submission form
  * - SUBMITTED: Show submitted state + GitHub URL (re-submission allowed)
- * - EVALUATED: Show evaluation result (next task available)
+ * - EVALUATING: Show live evaluation progress panel with polling
+ * - EVALUATED: Show full evaluation result (next task available)
  * - roadmap_completed: Show congratulations screen
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppNavbar from '../components/AppNavbar';
 import {
@@ -22,6 +23,8 @@ import {
   submitTask,
 } from '../services/roadmap';
 import type { Task, TaskStatus } from '../services/roadmap';
+import { getEvaluationForTask } from '../services/evaluator';
+import type { EvaluationResult, CheckResultResponse } from '../services/evaluator';
 
 // ── Difficulty indicator ───────────────────────────────────────────
 
@@ -51,13 +54,14 @@ function DifficultyDots({ level }: { level: number }) {
 // ── Status badge ───────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: TaskStatus }) {
-  const configs: Record<TaskStatus, { label: string; className: string }> = {
+  const configs: Record<string, { label: string; className: string }> = {
     ASSIGNED: { label: 'Assigned', className: 'bg-sky-500/15 text-sky-400 border-sky-500/30' },
     IN_PROGRESS: { label: 'In Progress', className: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
     SUBMITTED: { label: 'Under Review', className: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+    EVALUATING: { label: 'Evaluating…', className: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
     EVALUATED: { label: 'Evaluated', className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
   };
-  const config = configs[status];
+  const config = configs[status] ?? { label: status, className: 'bg-surface-800 text-surface-400 border-surface-700' };
   return (
     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${config.className}`}>
       {config.label}
@@ -135,6 +139,181 @@ function GitHubSubmitForm({
   );
 }
 
+// ── Evaluation result panel ────────────────────────────────────────
+
+function ScoreRing({ score, passed }: { score: number; passed: boolean }) {
+  const radius = 40;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+  const color = passed ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
+  return (
+    <div className="relative w-28 h-28 flex-shrink-0">
+      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+        <circle cx="50" cy="50" r={radius} fill="none" stroke="#1e293b" strokeWidth="10" />
+        <circle
+          cx="50" cy="50" r={radius} fill="none"
+          stroke={color} strokeWidth="10"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 1s ease' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color }}>{Math.round(score)}</span>
+        <span className="text-xs text-surface-400">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+function EvaluationPanel({ evaluation }: { evaluation: EvaluationResult }) {
+  const navigate = useNavigate();
+  const { final_score, passed, feedback_summary, deterministic_checks, llm_strengths, llm_weaknesses, llm_suggestions } = evaluation;
+
+  const isCompleted = evaluation.status === 'COMPLETED';
+  const isFailed = evaluation.status === 'FAILED';
+
+  return (
+    <div className={`p-5 rounded-2xl border space-y-5 ${
+      isCompleted && passed ? 'bg-emerald-500/5 border-emerald-500/20'
+      : isCompleted && !passed ? 'bg-red-500/5 border-red-500/20'
+      : 'bg-orange-500/5 border-orange-500/20'
+    }`}>
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        {isCompleted && final_score !== null && (
+          <ScoreRing score={final_score} passed={!!passed} />
+        )}
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">{isCompleted && passed ? '🎉' : isFailed ? '⚠️' : '📝'}</span>
+            <h3 className={`text-base font-bold ${
+              isCompleted && passed ? 'text-emerald-400'
+              : isFailed ? 'text-orange-400'
+              : 'text-red-400'
+            }`}>
+              {isCompleted && passed ? 'Task Passed!' : isFailed ? 'Evaluation Failed' : 'Needs Improvement'}
+            </h3>
+          </div>
+          {feedback_summary && (
+            <p className="text-sm text-surface-300 leading-relaxed">{feedback_summary}</p>
+          )}
+          {isFailed && evaluation.error_detail && (
+            <p className="text-sm text-orange-300 mt-1">{evaluation.error_detail}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Deterministic checks breakdown */}
+      {deterministic_checks && deterministic_checks.length > 0 && (
+        <div>
+          <h4 className="text-xs font-bold text-surface-400 uppercase tracking-widest mb-3">Code Review Checks</h4>
+          <div className="space-y-2">
+            {deterministic_checks.map((c: CheckResultResponse, i: number) => (
+              <div key={i} className={`flex items-start gap-3 p-3 rounded-xl text-sm ${
+                c.passed ? 'bg-emerald-500/8 border border-emerald-500/15' : 'bg-red-500/8 border border-red-500/15'
+              }`}>
+                <span className={`text-base flex-shrink-0 ${c.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {c.passed ? '✓' : '✗'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`font-semibold ${c.passed ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {c.check_name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </span>
+                    <span className={`text-xs font-mono flex-shrink-0 ${c.passed ? 'text-emerald-400' : 'text-surface-500'}`}>
+                      {c.score_contribution.toFixed(1)}/{c.weight_pct.toFixed(0)} pts
+                    </span>
+                  </div>
+                  <p className="text-xs text-surface-400 mt-0.5 leading-relaxed">{c.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* LLM insights */}
+      {(llm_strengths?.length || llm_weaknesses?.length || llm_suggestions?.length) && (
+        <div className="grid gap-4 md:grid-cols-3">
+          {llm_strengths && llm_strengths.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">💪 Strengths</h4>
+              <ul className="space-y-1">
+                {llm_strengths.slice(0,3).map((s, i) => (
+                  <li key={i} className="text-xs text-surface-300 flex items-start gap-1.5">
+                    <span className="text-emerald-400 flex-shrink-0">•</span>{s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {llm_weaknesses && llm_weaknesses.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-2">⚠️ Weaknesses</h4>
+              <ul className="space-y-1">
+                {llm_weaknesses.slice(0,3).map((w, i) => (
+                  <li key={i} className="text-xs text-surface-300 flex items-start gap-1.5">
+                    <span className="text-amber-400 flex-shrink-0">•</span>{w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {llm_suggestions && llm_suggestions.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-2">💡 Suggestions</h4>
+              <ul className="space-y-1">
+                {llm_suggestions.slice(0, 3).map((s, i) => (
+                  <li key={i} className="text-xs text-surface-300 flex items-start gap-1.5">
+                    <span className="text-sky-400 flex-shrink-0">•</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Link to full dedicated report */}
+      {isCompleted && (
+        <div className="pt-2 flex justify-end">
+          <button
+            onClick={() => navigate(`/evaluations/${evaluation.task_id}`)}
+            className="text-xs font-semibold text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors"
+          >
+            View Full Evaluation Report & Feedback Breakdown →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Evaluating status panel ────────────────────────────────────────
+
+function EvaluatingPanel() {
+  return (
+    <div className="p-5 rounded-2xl bg-orange-500/5 border border-orange-500/20 flex items-center gap-4">
+      <div className="w-10 h-10 flex-shrink-0">
+        <svg className="w-full h-full animate-spin text-orange-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+      </div>
+      <div>
+        <p className="text-sm font-bold text-orange-300">Evaluating Your Repository…</p>
+        <p className="text-xs text-surface-400 mt-0.5">
+          Agent 3 is analysing your code. This usually takes 20–60 seconds.
+          The result will appear here automatically.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Task card ──────────────────────────────────────────────────────
 
 function TaskCard({
@@ -146,6 +325,33 @@ function TaskCard({
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll for evaluation when task is EVALUATING
+  useEffect(() => {
+    const isEvaluating = task.status === 'EVALUATING' || task.status === 'SUBMITTED';
+    if (!isEvaluating) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
+    const poll = async () => {
+      try {
+        const result = await getEvaluationForTask(task.id);
+        if (result) {
+          setEvaluation(result);
+          if (result.status === 'COMPLETED' || result.status === 'FAILED') {
+            if (pollRef.current) clearInterval(pollRef.current);
+          }
+        }
+      } catch {
+        // Silently ignore poll errors
+      }
+    };
+    poll(); // Immediate first call
+    pollRef.current = setInterval(poll, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [task.id, task.status]);
 
   const handleStart = async () => {
     try {
@@ -317,8 +523,18 @@ function TaskCard({
         </div>
       )}
 
-      {/* Evaluated result */}
-      {task.status === 'EVALUATED' && evalSummary && (
+      {/* EVALUATING: show live poll panel */}
+      {(task.status === 'EVALUATING' || task.status === 'SUBMITTED') && !evaluation && (
+        <EvaluatingPanel />
+      )}
+
+      {/* Show live evaluation result from Agent 3 */}
+      {evaluation && (evaluation.status === 'COMPLETED' || evaluation.status === 'FAILED') && (
+        <EvaluationPanel evaluation={evaluation} />
+      )}
+
+      {/* Evaluated result from task summary (fallback when no live eval) */}
+      {task.status === 'EVALUATED' && evalSummary && !evaluation && (
         <div className={`p-5 rounded-2xl border ${evalSummary.passed ? 'bg-emerald-500/8 border-emerald-500/20' : 'bg-danger-500/8 border-danger-500/20'}`}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-lg">{evalSummary.passed ? '🎉' : '📝'}</span>

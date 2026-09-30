@@ -267,6 +267,7 @@ async def submit_task(
 ) -> TaskResponse:
     """Submit a task with a GitHub repository URL."""
     from app.services.github_validator import validate_github_url
+    from app.services.evaluator_client import EvaluatorClient
 
     is_valid, error_msg, normalized_url = validate_github_url(body.github_repo_url)
     if not is_valid:
@@ -282,11 +283,32 @@ async def submit_task(
             user_id=user_id,
             github_repo_url=normalized_url,
         )
-        return TaskResponse.model_validate(task)
     except TaskNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task {task_id} not found.")
     except (TaskTransitionError, DuplicateRepoUrlError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    # Fire-and-forget: trigger Agent 3 (evaluator-agent-service) asynchronously.
+    # We do NOT await — the student gets their response immediately.
+    # If the trigger fails, task remains SUBMITTED and can be re-triggered.
+    import asyncio
+
+    async def _trigger() -> None:
+        evaluator = EvaluatorClient()
+        started_at_str = task.started_at.isoformat() if task.started_at else None
+        skills = list(task.skills_targeted) if task.skills_targeted else []
+        await evaluator.trigger_evaluation(
+            task_id=task.id,
+            user_id=task.user_id,
+            github_repo_url=normalized_url,
+            task_started_at=started_at_str,
+            skills_targeted=skills,
+        )
+
+    asyncio.create_task(_trigger())
+    logger.info("Task %s submitted — evaluation trigger fired (fire-and-forget)", task_id)
+
+    return TaskResponse.model_validate(task)
 
 
 # ──────────────────────────────────────────────────────────────────────

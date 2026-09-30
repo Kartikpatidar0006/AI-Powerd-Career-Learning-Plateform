@@ -123,7 +123,7 @@ class MilestoneProgress(BaseModel):
     success_criteria: list[str]
     tasks_completed: int = 0
     tasks_planned: int = 0
-    state: Literal["completed", "current", "upcoming"] = "upcoming"
+    state: Literal["completed", "current", "upcoming", "needs_review"] = "upcoming"
 
 
 class RoadmapResponse(BaseModel):

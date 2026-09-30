@@ -1,8 +1,9 @@
+
 # 🚀 AI Powered Career Learning Platform
 
 > A production-grade, microservices-based platform leveraging specialized AI Agents to deliver personalized career learning paths, deterministic skill evaluation, daily coding tasks, and real-time readiness tracking.
 
-**Current Phase:** Week 3 Complete — Agent 2: Roadmap & Daily Task Generator (Hardened & Ready for Week 4)
+**Current Phase:** Week 4 Complete — Agent 3: GitHub Repository Evaluator (Static Analysis, Prompt Injection Defense, Evaluation Lifecycle)
 
 ---
 
@@ -13,15 +14,16 @@ career-platform/
 ├── services/
 │   ├── api-gateway/            # FastAPI reverse proxy — single external entry point (port 8000)
 │   │   ├── app/
-│   │   │   ├── main.py         # Proxies auth, profile, roadmap, and tasks with JWT validation
+│   │   │   ├── main.py         # Proxies auth, profile, roadmap, tasks, evaluations with JWT validation
 │   │   │   └── config.py       # Gateway config, rate limits, timeouts, defense tokens
-│   │   ├── tests/              # Gateway proxy and security tests
+│   │   ├── tests/              # Gateway proxy and security tests (16 tests)
 │   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
 │   ├── auth-service/           # Authentication microservice (internal port 8001)
 │   │   ├── app/                # User accounts, bcrypt security, access + refresh tokens
 │   │   ├── alembic/            # DB migrations for auth_db (001_initial, 002_refresh_tokens)
+│   │   ├── tests/              # 21 tests covering auth features & gateway defense
 │   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
@@ -31,26 +33,37 @@ career-platform/
 │   │   │   ├── services/       # Profile extraction, readiness scoring, profile locking
 │   │   │   └── core/llm/       # LLM provider abstraction (OpenAI, Anthropic, Mock)
 │   │   ├── alembic/            # DB migrations for profile_db (001_create_student_profiles)
-│   │   ├── tests/              # Agent 1 schema validation and domain tests
+│   │   ├── tests/              # Agent 1 schema validation and domain tests (20 tests)
 │   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
-│   └── roadmap-agent-service/  # Agent 2: Roadmap & Daily Task Generator (internal port 8003)
+│   ├── roadmap-agent-service/  # Agent 2: Roadmap & Daily Task Generator (internal port 8003)
+│   │   ├── app/
+│   │   │   ├── routers/        # /roadmap/generate, /roadmap/me, /tasks/next, /tasks/{id}/*
+│   │   │   ├── services/       # State machine, difficulty calculation, LLM task generation, evaluator trigger
+│   │   │   ├── models/         # Roadmap & Task models with partial unique indexes
+│   │   │   └── core/llm/       # LLM provider abstraction with duplicate title detection
+│   │   ├── alembic/            # DB migrations for roadmap_db (001_initial, 002_week4_prep)
+│   │   ├── tests/              # 81 unit & real-DB concurrency integration tests
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   │
+│   └── evaluator-agent-service/# Agent 3: GitHub Repository Evaluator (internal port 8004)
 │       ├── app/
-│       │   ├── routers/        # /roadmap/generate, /roadmap/me, /tasks/next, /tasks/{id}/*
-│       │   ├── services/       # State machine, difficulty calculation, LLM task generation
-│       │   ├── models/         # Roadmap & Task models with partial unique indexes
-│       │   └── core/llm/       # LLM provider abstraction with duplicate title detection
-│       ├── alembic/            # DB migrations for roadmap_db (001_initial, 002_week4_prep)
-│       ├── tests/              # 75 unit & real-DB concurrency integration tests
+│       │   ├── routers/        # POST /internal/evaluate, GET /evaluations/{task_id}, POST /dev/evaluations/trigger/{task_id}
+│       │   ├── services/       # 7 deterministic checks, GitHub REST client, LLM code reviewer, score composition
+│       │   ├── models/         # Evaluation ORM model with JSONB snapshots and check results
+│       │   └── core/llm/       # LLM provider abstraction with strict prompt injection defense
+│       ├── alembic/            # DB migrations for evaluator_db (0001_initial)
+│       ├── tests/              # 40 comprehensive unit & injection defense tests
 │       ├── Dockerfile
 │       └── requirements.txt
 │
 ├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS
 │   └── src/
-│       ├── pages/              # LoginPage, SignupPage, OnboardingPage, DashboardPage, RoadmapPage
-│       ├── components/         # ProtectedRoute, AppNavbar, TaskCard, MilestoneTimeline
-│       └── services/           # Axios API client with 504/409 fallback re-checks
+│       ├── pages/              # LoginPage, SignupPage, OnboardingPage, DashboardPage, RoadmapPage, DailyTaskPage, EvaluationResultPage
+│       ├── components/         # ProtectedRoute, AppNavbar, TaskCard, MilestoneTimeline, ScoreRing
+│       └── services/           # Axios API clients for auth, profile, roadmap, and evaluator
 │
 ├── docker-compose.yml          # Production compose: host ports restricted to gateway & frontend
 ├── docker-compose.dev.yml      # Local debugging compose: publishes internal microservice & DB ports
@@ -467,20 +480,29 @@ curl -s -X POST http://localhost:8000/tasks/next \
 
 ## 🧪 Automated Testing Suite
 
-All tests across all microservices pass with 100% success rate:
+All tests across all 5 microservices pass with 100% success rate (178 tests total):
 
 ```bash
-# 1. API Gateway tests (14 passed)
+# 1. API Gateway tests (16 passed)
 pytest services/api-gateway/tests
 
-# 2. Profile Agent Service tests (15 passed)
+# 2. Auth Service tests (21 passed)
+pytest services/auth-service/tests
+
+# 3. Profile Agent Service tests (20 passed)
 pytest services/profile-agent-service/tests
 
-# 3. Roadmap Agent Service unit & real-DB concurrency tests (75 passed)
+# 4. Roadmap Agent Service unit & real-DB concurrency tests (81 passed)
 pytest services/roadmap-agent-service/tests
+
+# 5. Evaluator Agent Service (Agent 3) unit & injection defense tests (40 passed)
+pytest services/evaluator-agent-service/tests
 ```
 
-**Real-DB Concurrency & Isolation Coverage (`test_real_db_concurrency.py`):**
-- 10 parallel `POST /roadmap/generate` -> exactly 1 roadmap (201 Created), 9 clean 409 Conflict.
-- 10 parallel `POST /tasks/next` -> exactly 1 task (200 OK), 9 clean 409 Conflict.
-- Real PostgreSQL tables queried to confirm single-row integrity with zero traceback leakage.
+**Evaluator Agent Service (Agent 3) Test Coverage:**
+- 18 isolated tests for all 7 deterministic checks with crafted fixtures and language heuristics
+- 5 prompt injection defense tests proving delimiter protection, char limits, and cap rule enforcement
+- 5 score composition tests verifying 65%/35% formula, cap boundaries, and mentor feedback synthesis
+- 5 GitHub REST API error mapping tests (404, private, 429 rate limit, 500 server error)
+- 7 API integration & defense tests verifying idempotency (409), gateway security tokens, and user isolation
+- Zero response leakage of internal red_flags or python "Traceback" stack traces

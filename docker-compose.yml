@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────────────────────────────
 # AI Powered Career Learning Platform — Docker Compose
-# Week 3: Roadmap & Task Generator (Agent 2)
+# Week 4: GitHub Repository Evaluator (Agent 3)
 # ──────────────────────────────────────────────────────────────────────
 
 services:
@@ -130,6 +130,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${ROADMAP_DB_USER:-roadmap_user}:${ROADMAP_DB_PASSWORD:-roadmap_pass}@postgres-roadmap:5432/${ROADMAP_DB_NAME:-roadmap_db}
       PROFILE_SERVICE_INTERNAL_URL: http://profile-agent-service:8002
+      EVALUATOR_SERVICE_INTERNAL_URL: http://evaluator-agent-service:8004
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
       GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
@@ -153,6 +154,61 @@ services:
     networks:
       - career-network
 
+  # ── PostgreSQL for Evaluator Agent Service (Agent 3) ───────────────
+  postgres-evaluator:
+    image: postgres:16-alpine
+    container_name: career-platform-postgres-evaluator
+    environment:
+      POSTGRES_DB: ${EVALUATOR_DB_NAME:-evaluator_db}
+      POSTGRES_USER: ${EVALUATOR_DB_USER:-evaluator_user}
+      POSTGRES_PASSWORD: ${EVALUATOR_DB_PASSWORD:-evaluator_pass}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_evaluator_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVALUATOR_DB_USER:-evaluator_user} -d ${EVALUATOR_DB_NAME:-evaluator_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - career-network
+
+  # ── Evaluator Agent Service (Agent 3) ──────────────────────────────
+  evaluator-agent-service:
+    build:
+      context: ./services/evaluator-agent-service
+      dockerfile: Dockerfile
+    container_name: career-platform-evaluator-agent-service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${EVALUATOR_DB_USER:-evaluator_user}:${EVALUATOR_DB_PASSWORD:-evaluator_pass}@postgres-evaluator:5432/${EVALUATOR_DB_NAME:-evaluator_db}
+      ROADMAP_SERVICE_INTERNAL_URL: http://roadmap-agent-service:8003
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      APP_ENV: ${APP_ENV:-production}
+      PASS_SCORE: ${PASS_SCORE:-60}
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    expose:
+      - "8004"
+    depends_on:
+      postgres-evaluator:
+        condition: service_healthy
+      roadmap-agent-service:
+        condition: service_started
+    command: ["bash", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload"]
+    volumes:
+      - ./services/evaluator-agent-service:/app
+    networks:
+      - career-network
+
   # ── API Gateway ────────────────────────────────────────────────────
   api-gateway:
     build:
@@ -163,6 +219,7 @@ services:
       AUTH_SERVICE_URL: http://auth-service:8001
       PROFILE_SERVICE_URL: http://profile-agent-service:8002
       ROADMAP_SERVICE_URL: http://roadmap-agent-service:8003
+      EVALUATOR_SERVICE_URL: http://evaluator-agent-service:8004
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-a-strong-secret}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       GATEWAY_SERVICE_TOKEN: ${GATEWAY_SERVICE_TOKEN:-change-me-gateway-token}
@@ -174,6 +231,7 @@ services:
       - auth-service
       - profile-agent-service
       - roadmap-agent-service
+      - evaluator-agent-service
     volumes:
       - ./services/api-gateway:/app
     networks:
@@ -204,6 +262,8 @@ volumes:
     name: career-platform-postgres-profile-data
   postgres_roadmap_data:
     name: career-platform-postgres-roadmap-data
+  postgres_evaluator_data:
+    name: career-platform-postgres-evaluator-data
 
 networks:
   career-network:

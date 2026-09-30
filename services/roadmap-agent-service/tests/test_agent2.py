@@ -539,6 +539,27 @@ class TestGitHubURLValidation(unittest.TestCase):
         is_valid, _, _ = validate_github_url("https://github.com/-alice/repo")
         self.assertFalse(is_valid)
 
+    def test_mixed_case_owner_and_repo_normalized_to_lowercase(self) -> None:
+        """
+        Mixed-case owner/repo must be normalized to all-lowercase.
+
+        GitHub treats owner and repo as case-insensitive.
+        Storing lowercase guarantees the uix_task_user_github_repo unique
+        index correctly detects duplicate submissions regardless of the
+        case the student typed.
+        """
+        is_valid, error, normalized = validate_github_url(
+            "https://github.com/AliceStudent/My-Fullstack-Project"
+        )
+        self.assertTrue(is_valid, f"Expected valid URL, got error: {error}")
+        self.assertEqual(normalized, "https://github.com/alicestudent/my-fullstack-project")
+
+    def test_already_lowercase_unchanged(self) -> None:
+        """URLs already in lowercase pass through normalization unchanged."""
+        is_valid, _, normalized = validate_github_url("https://github.com/alice/my-repo")
+        self.assertTrue(is_valid)
+        self.assertEqual(normalized, "https://github.com/alice/my-repo")
+
 
 # ──────────────────────────────────────────────────────────────────────
 # 5. Near-Duplicate Title Detection Tests
@@ -982,5 +1003,247 @@ class TestFactoryHardening(unittest.TestCase):
                 self.assertIsInstance(provider, MockLLMProvider)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# MAX_REMEDIATION_ATTEMPTS Tests
+# ──────────────────────────────────────────────────────────────────────
+
+class TestMaxRemediationAttempts(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for the MAX_REMEDIATION_ATTEMPTS cap:
+      1. _count_consecutive_failed_on_milestone counts only trailing failures.
+      2. compute_milestone_progress treats stored state='needs_review' correctly.
+      3. generate_next_task marks milestone needs_review after hitting the limit.
+    """
+
+    # ── Helper fixtures ──────────────────────────────────────────────
+
+    def _make_evaluated_task(
+        self,
+        seq: int,
+        milestone_order: int,
+        passed: bool,
+        user_id=None,
+        roadmap_id=None,
+    ):
+        """Build a minimal Task ORM-like object (plain Python, no SQLAlchemy)."""
+        from unittest.mock import MagicMock
+        from app.models.task import TaskStatus
+        t = MagicMock()
+        t.id = uuid.uuid4()
+        t.user_id = user_id or uuid.uuid4()
+        t.roadmap_id = roadmap_id or uuid.uuid4()
+        t.milestone_order = milestone_order
+        t.sequence_number = seq
+        t.status = TaskStatus.EVALUATED
+        t.evaluation_summary = {
+            "score": 90.0 if passed else 40.0,
+            "passed": passed,
+            "feedback": "Great work!" if passed else "Failed — needs improvement.",
+        }
+        return t
+
+    def _make_milestone_dict(self, order: int, days: int = 6, state: str | None = None) -> dict:
+        m: dict = {
+            "order": order,
+            "title": f"Milestone {order}",
+            "description": "Some description",
+            "target_skills": ["Python"],
+            "estimated_days": days,
+            "difficulty_band": order,
+            "success_criteria": ["Criterion A", "Criterion B"],
+        }
+        if state is not None:
+            m["state"] = state
+        return m
+
+    # ── Test 1: _count_consecutive_failed_on_milestone ──────────────
+
+    def test_count_consecutive_failed_pure_failures(self) -> None:
+        """Three consecutive failures → count == 3."""
+        from app.services.roadmap_service import _count_consecutive_failed_on_milestone
+        uid = uuid.uuid4()
+        rid = uuid.uuid4()
+        tasks = [
+            self._make_evaluated_task(1, 1, passed=False, user_id=uid, roadmap_id=rid),
+            self._make_evaluated_task(2, 1, passed=False, user_id=uid, roadmap_id=rid),
+            self._make_evaluated_task(3, 1, passed=False, user_id=uid, roadmap_id=rid),
+        ]
+        count = _count_consecutive_failed_on_milestone(tasks, milestone_order=1)
+        self.assertEqual(count, 3)
+
+    def test_count_stops_at_first_pass(self) -> None:
+        """Two failures then a pass → only the trailing 2 failures are counted."""
+        from app.services.roadmap_service import _count_consecutive_failed_on_milestone
+        uid = uuid.uuid4()
+        rid = uuid.uuid4()
+        tasks = [
+            self._make_evaluated_task(1, 1, passed=True,  user_id=uid, roadmap_id=rid),
+            self._make_evaluated_task(2, 1, passed=False, user_id=uid, roadmap_id=rid),
+            self._make_evaluated_task(3, 1, passed=False, user_id=uid, roadmap_id=rid),
+        ]
+        count = _count_consecutive_failed_on_milestone(tasks, milestone_order=1)
+        self.assertEqual(count, 2)
+
+    def test_count_ignores_other_milestones(self) -> None:
+        """Failures on a different milestone_order do not affect the count."""
+        from app.services.roadmap_service import _count_consecutive_failed_on_milestone
+        uid = uuid.uuid4()
+        rid = uuid.uuid4()
+        tasks = [
+            self._make_evaluated_task(1, 2, passed=False, user_id=uid, roadmap_id=rid),  # other milestone
+            self._make_evaluated_task(2, 1, passed=False, user_id=uid, roadmap_id=rid),  # target milestone
+        ]
+        count = _count_consecutive_failed_on_milestone(tasks, milestone_order=1)
+        self.assertEqual(count, 1)
+
+    def test_count_zero_when_no_tasks(self) -> None:
+        """Empty task list → count == 0."""
+        from app.services.roadmap_service import _count_consecutive_failed_on_milestone
+        count = _count_consecutive_failed_on_milestone([], milestone_order=1)
+        self.assertEqual(count, 0)
+
+    # ── Test 2: compute_milestone_progress with needs_review ─────────
+
+    def test_needs_review_state_preserved_in_progress(self) -> None:
+        """
+        A milestone dict with state='needs_review' must yield state='needs_review'
+        in the MilestoneProgress output (not 'current' or 'completed').
+        """
+        from app.services.roadmap_service import compute_milestone_progress
+        from app.models.task import TaskStatus
+
+        milestones = [
+            self._make_milestone_dict(order=1, days=6, state="needs_review"),
+            self._make_milestone_dict(order=2, days=6),
+        ]
+        uid = uuid.uuid4()
+        rid = uuid.uuid4()
+        # No passed tasks on milestone 1
+        tasks = [
+            self._make_evaluated_task(1, 1, passed=False, user_id=uid, roadmap_id=rid),
+        ]
+        result = compute_milestone_progress(milestones, tasks)
+
+        m1 = next(r for r in result if r.order == 1)
+        self.assertEqual(m1.state, "needs_review",
+                         "Milestone with stored state needs_review must report needs_review")
+
+        # Milestone 2 should be 'current' because milestone 1 is needs_review (treated as done)
+        m2 = next(r for r in result if r.order == 2)
+        self.assertEqual(m2.state, "current",
+                         "Milestone after needs_review should be 'current'")
+
+    # ── Test 3: generate_next_task marks needs_review at limit ───────
+
+    async def test_generate_next_task_marks_needs_review_at_limit(self) -> None:
+        """
+        When consecutive failures on a milestone == MAX_REMEDIATION_ATTEMPTS,
+        generate_next_task must:
+          - Set milestone state to needs_review in roadmap.milestones.
+          - Call db.commit() to persist the update.
+          - Return a non-remediation task (is_remediation=False) on the next milestone.
+        """
+        from app.services.roadmap_service import RoadmapService
+        from app.core.llm.mock_provider import MockLLMProvider
+
+        uid = uuid.uuid4()
+        rid = uuid.uuid4()
+
+        # 3 consecutive failures on milestone 1 (== MAX_REMEDIATION_ATTEMPTS default)
+        failed_tasks = [
+            self._make_evaluated_task(i + 1, 1, passed=False, user_id=uid, roadmap_id=rid)
+            for i in range(3)
+        ]
+
+        milestone_dicts = [
+            self._make_milestone_dict(order=1, days=6),   # will become needs_review
+            self._make_milestone_dict(order=2, days=6),   # will become current
+        ]
+
+        # Build a fake Roadmap object
+        roadmap = MagicMock()
+        roadmap.id = rid
+        roadmap.user_id = uid
+        roadmap.milestones = milestone_dicts
+        roadmap.profile_snapshot = {
+            "target_role": "Software Engineer",
+            "experience_level": "fresher",
+            "structured_skills": [],
+            "dashboard_data": {},
+        }
+        roadmap.status = "active"
+
+        # Mock DB session
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock(side_effect=lambda obj: None)
+
+        # execute() call sequence:
+        # 1. get_roadmap_by_user_id → returns roadmap
+        # 2. get_active_task → returns None (no active task)
+        # 3. select(Task) for all_tasks → returns failed_tasks
+        def _make_result(return_value):
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = return_value
+            r.scalars.return_value.all.return_value = return_value
+            return r
+
+        # db.refresh must populate created_at on whatever Task object is passed to it
+        async def _mock_refresh(obj):
+            from datetime import datetime, timezone
+            if hasattr(obj, "created_at"):
+                obj.created_at = datetime.now(timezone.utc)
+
+        db.refresh = AsyncMock(side_effect=_mock_refresh)
+
+        db.execute.side_effect = [
+            _make_result(roadmap),       # get_roadmap_by_user_id
+            _make_result(None),          # get_active_task (returns None = no active task)
+            _make_result(failed_tasks),  # select all tasks for milestone progress + max_seq
+        ]
+
+        provider = MockLLMProvider()
+        service = RoadmapService(llm_provider=provider)
+
+        with patch.object(settings, "MAX_REMEDIATION_ATTEMPTS", 3):
+            with patch(
+                "app.services.roadmap_service.generate_task_from_llm",
+                new_callable=AsyncMock,
+            ) as mock_gen_task:
+                # Return a valid LLMTaskOutput for the next-milestone task
+                mock_gen_task.return_value = LLMTaskOutput(
+                    title="Next Milestone Task",
+                    description="A new task on milestone 2 skills.",
+                    requirements=["1. Req one", "2. Req two", "3. Req three"],
+                    acceptance_criteria=["Criterion A", "Criterion B"],
+                    skills_targeted=["Python"],
+                    estimated_hours=4.0,
+                    starter_hint="Start by setting up a virtual environment.",
+                )
+
+                result = await service.generate_next_task(db=db, user_id=uid)
+
+        # Milestone 1 should now be flagged needs_review
+        updated_m1 = next(m for m in roadmap.milestones if m["order"] == 1)
+        self.assertEqual(
+            updated_m1.get("state"), "needs_review",
+            "Milestone 1 state must be needs_review after hitting the remediation limit",
+        )
+
+        # DB commit must have been called to persist the needs_review flag
+        db.commit.assert_called()
+
+        # The LLM was called with is_remediation=False (normal next-milestone task)
+        call_kwargs = mock_gen_task.call_args[1]
+        self.assertFalse(
+            call_kwargs.get("is_remediation", True),
+            "generate_task_from_llm must be called with is_remediation=False after limit",
+        )
+
+        # The returned result should be task_assigned on the next milestone
+        self.assertEqual(result.get("status"), "task_assigned")
+
+
 if __name__ == "__main__":
     unittest.main()
+

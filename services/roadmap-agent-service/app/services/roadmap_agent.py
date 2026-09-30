@@ -168,7 +168,7 @@ PREVIOUS TASKS (DO NOT REPEAT these topics or skills too heavily):
 
 PERFORMANCE CONTEXT (adjust task pacing accordingly):
 {performance_context}
-{remediation_context}
+
 Generate a fresh, real-world coding task that:
 - Requires the student to push code to a public GitHub repository
 - Has numbered, specific requirements
@@ -176,6 +176,65 @@ Generate a fresh, real-world coding task that:
 - Targets the milestone skills listed above
 - Is at difficulty level {difficulty}/5
 - Different scenario, progressively harder, same milestone skills
+
+Output the JSON task now.
+"""
+
+
+# ──────────────────────────────────────────────────────────────────────
+# LLM Prompt Template — Remediation Task Generation (separate from normal task)
+#
+# Rules for this template:
+#  - Same milestone skills as the failed task (student must master them).
+#  - Adds explicit scaffolding language to help the student succeed.
+#  - Does NOT include a "do not repeat topics" instruction — the point is
+#    to revisit the same skills with more support.
+#  - Wraps previous feedback in a clearly-delimited data block capped at
+#    1000 characters to keep the prompt within context limits.
+# ──────────────────────────────────────────────────────────────────────
+
+REMEDIATION_TASK_USER_PROMPT_TEMPLATE = """Generate a REMEDIATION learning task for this student.
+
+The student did not pass their previous task on the milestone skills below.
+Your goal is to design a NEW task on the SAME skills — but with more step-by-step
+scaffolding, clearer acceptance criteria, and a more detailed starter_hint so the
+student can succeed this time.
+
+TARGET ROLE: {target_role}
+CURRENT MILESTONE: Milestone {milestone_order} — "{milestone_title}"
+MILESTONE DESCRIPTION: {milestone_description}
+MILESTONE SKILLS TO TEACH: {milestone_skills}
+MILESTONE SUCCESS CRITERIA: {milestone_success_criteria}
+
+TASK DIFFICULTY: {difficulty}/5 (PRE-DETERMINED — keep the task at exactly this difficulty level)
+ESTIMATED HOURS: {estimated_hours} (keep the task completable in approximately this time)
+
+STUDENT SKILL LEVELS:
+{student_skills}
+
+PERFORMANCE CONTEXT (adjust task pacing accordingly):
+{performance_context}
+
+<<<PREVIOUS_EVALUATION_FEEDBACK_START>>>
+{previous_feedback}
+<<<PREVIOUS_EVALUATION_FEEDBACK_END>>>
+
+SCAFFOLDING INSTRUCTIONS:
+- Break the task into clearly numbered, sequential steps.
+- The starter_hint MUST describe the very first concrete action (e.g. "Run `git init`, create a
+  virtual environment, then install dependencies with pip").
+- Acceptance criteria must be more granular than the previous task — each criterion should
+  map directly to a numbered requirement.
+- The task scenario may differ from the previous one, but MUST target the exact same
+  milestone skills listed above.
+
+Generate a remediation coding task that:
+- Requires the student to push code to a public GitHub repository
+- Has numbered, specific requirements with step-by-step scaffolding
+- Has objectively testable acceptance criteria (one per key requirement)
+- Targets the same milestone skills listed above
+- Is at difficulty level {difficulty}/5
+- Gives the student a clear path to succeed where they previously failed
 
 Output the JSON task now.
 """
@@ -599,30 +658,37 @@ async def generate_task_from_llm(
         perf_text = "No evaluation data yet (first task or evaluations pending)"
 
     if is_remediation:
-        remediation_context = (
-            "\nREMEDIATION TASK:\n"
-            "The student did not pass their previous task on these skills.\n"
-            f"PREVIOUS EVALUATION FEEDBACK:\n{previous_feedback or 'Task did not satisfy acceptance criteria.'}\n"
-            "INSTRUCTION: Create a targeted remediation task on the SAME skills with clearer scaffolding "
-            "to help the student master the concepts they missed.\n"
+        # Cap previous feedback at 1000 characters to avoid exceeding context limits.
+        raw_feedback = previous_feedback or "Task did not satisfy acceptance criteria."
+        capped_feedback = raw_feedback[:1000] + ("..." if len(raw_feedback) > 1000 else "")
+
+        user_prompt = REMEDIATION_TASK_USER_PROMPT_TEMPLATE.format(
+            target_role=target_role,
+            milestone_order=milestone.order,
+            milestone_title=milestone.title,
+            milestone_description=milestone.description,
+            milestone_skills=", ".join(milestone.target_skills),
+            milestone_success_criteria="\n".join(f"  - {c}" for c in milestone.success_criteria),
+            difficulty=difficulty,
+            estimated_hours=estimated_hours,
+            student_skills=skills_text,
+            performance_context=perf_text,
+            previous_feedback=capped_feedback,
         )
     else:
-        remediation_context = ""
-
-    user_prompt = TASK_USER_PROMPT_TEMPLATE.format(
-        target_role=target_role,
-        milestone_order=milestone.order,
-        milestone_title=milestone.title,
-        milestone_description=milestone.description,
-        milestone_skills=", ".join(milestone.target_skills),
-        milestone_success_criteria="\n".join(f"  - {c}" for c in milestone.success_criteria),
-        difficulty=difficulty,
-        estimated_hours=estimated_hours,
-        student_skills=skills_text,
-        previous_tasks_summary=prev_summary,
-        performance_context=perf_text,
-        remediation_context=remediation_context,
-    )
+        user_prompt = TASK_USER_PROMPT_TEMPLATE.format(
+            target_role=target_role,
+            milestone_order=milestone.order,
+            milestone_title=milestone.title,
+            milestone_description=milestone.description,
+            milestone_skills=", ".join(milestone.target_skills),
+            milestone_success_criteria="\n".join(f"  - {c}" for c in milestone.success_criteria),
+            difficulty=difficulty,
+            estimated_hours=estimated_hours,
+            student_skills=skills_text,
+            previous_tasks_summary=prev_summary,
+            performance_context=perf_text,
+        )
 
     previous_titles = [t.get("title", "") for t in previous_tasks if t.get("title")]
 

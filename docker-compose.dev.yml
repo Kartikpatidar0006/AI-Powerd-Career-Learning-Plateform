@@ -20,6 +20,10 @@ services:
     ports:
       - "5435:5432"
 
+  postgres-evaluator:
+    ports:
+      - "5436:5432"
+
   # ── Downstream Microservices ──────────────────────────────────────
   auth-service:
     ports:
@@ -28,9 +32,21 @@ services:
   profile-agent-service:
     ports:
       - "8002:8002"
+    environment:
+      APP_ENV: development
+      LLM_PROVIDER: mock
 
   roadmap-agent-service:
     ports:
       - "8003:8003"
     environment:
       APP_ENV: development
+      LLM_PROVIDER: mock
+
+  evaluator-agent-service:
+    ports:
+      - "8004:8004"
+    environment:
+      APP_ENV: development
+      LLM_PROVIDER: mock
+

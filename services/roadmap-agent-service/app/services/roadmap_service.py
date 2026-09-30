@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.llm.base import BaseLLMProvider
+from app.core.config import settings
 from app.models.roadmap import Roadmap
 from app.models.task import Task, TaskStatus
 from app.schemas.roadmap import (
@@ -84,6 +85,8 @@ def compute_milestone_progress(
     A milestone is COMPLETED when the number of PASSED EVALUATED tasks for it reaches
     or exceeds the planned task count (estimated_days // DAYS_PER_TASK, min 1).
     Milestone progress counts ONLY passed tasks (evaluation_summary['passed'] is True).
+    A milestone with state 'needs_review' in the stored dict is treated as completed
+    (the remediation attempt limit was reached; the student may advance).
     The CURRENT milestone is the first incomplete one. All after that are UPCOMING.
 
     Args:
@@ -105,6 +108,9 @@ def compute_milestone_progress(
                 passed_by_milestone[order] = passed_by_milestone.get(order, 0) + 1
 
     results: list[MilestoneProgress] = []
+    # past_all_done: True while we are still consuming completed/needs_review milestones.
+    # found_current: True once we have assigned 'current' to a milestone.
+    past_all_done = True
     found_current = False
 
     for m in milestones:
@@ -112,15 +118,27 @@ def compute_milestone_progress(
         planned = max(1, m.get("estimated_days", DAYS_PER_TASK) // DAYS_PER_TASK)
         completed_count = passed_by_milestone.get(order, 0)
 
-        is_complete = completed_count >= planned
+        stored_state = m.get("state")
+        # A milestone is "done" if it has enough passed tasks OR if it has been
+        # flagged needs_review (remediation attempt limit reached).
+        is_done = (completed_count >= planned) or (stored_state == "needs_review")
 
-        if is_complete:
+        if stored_state == "needs_review":
+            state = "needs_review"
+            # Stays done; past_all_done remains True if it already was
+        elif completed_count >= planned:
             state = "completed"
-        elif not found_current:
+        elif past_all_done and not found_current:
+            # First non-done milestone after all preceding done milestones → current
             state = "current"
             found_current = True
+            past_all_done = False
         else:
             state = "upcoming"
+
+        # If this milestone is not done, the "all done" streak ends
+        if not is_done:
+            past_all_done = False
 
         results.append(MilestoneProgress(
             order=order,
@@ -136,6 +154,40 @@ def compute_milestone_progress(
         ))
 
     return results
+
+
+def _count_consecutive_failed_on_milestone(
+    all_tasks: list[Task],
+    milestone_order: int,
+) -> int:
+    """
+    Count the number of consecutive FAILED evaluated tasks on a given milestone.
+
+    Sorted by sequence_number descending, counts failures until a passed task
+    or a task on a different milestone is found.
+
+    Args:
+        all_tasks: All tasks for the user.
+        milestone_order: The milestone order to count failures for.
+
+    Returns:
+        Count of consecutive trailing failures on this milestone.
+    """
+    milestone_tasks = [
+        t for t in all_tasks
+        if t.milestone_order == milestone_order and t.status == TaskStatus.EVALUATED
+    ]
+    # Sort by sequence_number descending (most recent first)
+    milestone_tasks.sort(key=lambda t: t.sequence_number, reverse=True)
+
+    count = 0
+    for task in milestone_tasks:
+        summary = task.evaluation_summary or {}
+        if summary.get("passed") is False:
+            count += 1
+        else:
+            break  # stop on first pass
+    return count
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -340,13 +392,47 @@ class RoadmapService:
                 previous_feedback = last_summary.get("feedback") or "Previous task failed acceptance criteria."
                 remediation_milestone_order = last_evaluated.milestone_order
 
+        # MAX_REMEDIATION_ATTEMPTS: if the student has failed too many times on this
+        # milestone, mark it as needs_review and let them advance to the next milestone.
+        if is_remediation and remediation_milestone_order is not None:
+            consecutive_failures = _count_consecutive_failed_on_milestone(
+                all_tasks, remediation_milestone_order
+            )
+            if consecutive_failures >= settings.MAX_REMEDIATION_ATTEMPTS:
+                logger.warning(
+                    "User %s has hit MAX_REMEDIATION_ATTEMPTS (%d) on milestone %d. "
+                    "Marking needs_review and allowing advancement.",
+                    user_id,
+                    settings.MAX_REMEDIATION_ATTEMPTS,
+                    remediation_milestone_order,
+                )
+                # Mutate the milestone's stored state to needs_review
+                new_milestones = []
+                for m in roadmap.milestones:
+                    if m["order"] == remediation_milestone_order:
+                        m = dict(m)  # copy to avoid mutating the cached ORM dict
+                        m["state"] = "needs_review"
+                    new_milestones.append(m)
+                roadmap.milestones = new_milestones
+                await db.commit()
+                await db.refresh(roadmap)
+
+                # Reset remediation flag — treat as normal next-task request
+                is_remediation = False
+                previous_feedback = None
+                remediation_milestone_order = None
+
+                # Recompute milestone progress with the updated roadmap
+                milestone_progresses = compute_milestone_progress(roadmap.milestones, all_tasks)
+
         # Find the current (non-completed) milestone
         current_milestone_progress = next(
             (mp for mp in milestone_progresses if mp.state == "current"), None
         )
 
-        # All milestones completed?
-        all_completed = all(mp.state == "completed" for mp in milestone_progresses)
+        # All milestones completed (or needs_review — remediation limit reached)?
+        # A needs_review milestone is treated as completed for advancement purposes.
+        all_completed = all(mp.state in ("completed", "needs_review") for mp in milestone_progresses)
         if all_completed and not is_remediation:
             logger.info("All milestones completed for user %s — roadmap is done!", user_id)
             return {"status": "roadmap_completed"}

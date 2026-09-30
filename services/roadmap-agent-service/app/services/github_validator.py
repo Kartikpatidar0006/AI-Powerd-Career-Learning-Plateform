@@ -86,4 +86,12 @@ def validate_github_url(url: str) -> Tuple[bool, str | None, str]:
             "",
         )
 
-    return True, None, work_url
+    # Lowercase-normalize owner and repo segments.
+    # GitHub treats owner/repo as case-insensitive; storing lowercase
+    # guarantees the unique index (uix_task_user_github_repo) works
+    # correctly regardless of the case supplied by the client.
+    prefix = "https://github.com/"
+    path_part = work_url[len(prefix):]
+    normalized_url = prefix + path_part.lower()
+
+    return True, None, normalized_url

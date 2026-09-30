@@ -20,7 +20,7 @@ from app.main import app
 import app.db.session as session_module
 from app.services.profile_client import ProfileClient
 
-REAL_DB_URL = "postgresql+asyncpg://postgres@localhost:5435/roadmap_db"
+REAL_DB_URL = "postgresql+asyncpg://roadmap_user:roadmap_pass@localhost:5435/roadmap_db"
 
 
 @pytest.fixture(scope="module", autouse=True)

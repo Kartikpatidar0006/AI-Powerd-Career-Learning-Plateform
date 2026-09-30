@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         default="http://profile-agent-service:8002",
         description="Internal URL for profile-agent-service (not via gateway)",
     )
+    EVALUATOR_SERVICE_INTERNAL_URL: str = Field(
+        default="http://evaluator-agent-service:8004",
+        description="Internal URL for evaluator-agent-service (Agent 3, not via gateway)",
+    )
     INTERNAL_SERVICE_TOKEN: str = Field(
         default="change-me-internal-token",
         description="Shared secret for service-to-service authentication",
@@ -47,6 +51,14 @@ class Settings(BaseSettings):
     PASS_SCORE: int = Field(
         default=60,
         description="Threshold score (0-100) required for a task to be marked as passed",
+    )
+    MAX_REMEDIATION_ATTEMPTS: int = Field(
+        default=3,
+        description=(
+            "Maximum number of remediation tasks per milestone. "
+            "After this many consecutive failed evaluations on the same milestone, "
+            "the milestone is marked needs_review and the student may advance."
+        ),
     )
 
     # LLM Configuration (Swappable provider abstraction)

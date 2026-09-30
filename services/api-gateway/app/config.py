@@ -28,6 +28,10 @@ class Settings(BaseSettings):
         default="http://roadmap-agent-service:8003",
         description="Base URL for the internal roadmap agent service",
     )
+    EVALUATOR_SERVICE_URL: str = Field(
+        default="http://evaluator-agent-service:8004",
+        description="Base URL for the internal evaluator agent service (Agent 3)",
+    )
 
     # JWT Verification
     JWT_SECRET_KEY: str = Field(

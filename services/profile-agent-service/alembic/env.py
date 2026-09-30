@@ -2,6 +2,15 @@
 Alembic environment configuration for async SQLAlchemy in profile-agent-service.
 """
 
+# ---------------------------------------------------------------------------
+# Defensive sys.path fix: ensure the service root (parent of this alembic/
+# directory) is on sys.path so `app.*` imports always resolve, regardless of
+# how alembic is invoked (console script vs. python -m).
+# ---------------------------------------------------------------------------
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import asyncio
 from logging.config import fileConfig
 
