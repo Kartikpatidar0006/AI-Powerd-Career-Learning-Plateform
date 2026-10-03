@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         default="http://roadmap-agent-service:8003",
         description="Internal URL for roadmap-agent-service (not via gateway)",
     )
+    INTERVIEW_SERVICE_INTERNAL_URL: str = Field(
+        default="http://interview-agent-service:8005",
+        description="Internal URL for interview-agent-service (not via gateway)",
+    )
     INTERNAL_SERVICE_TOKEN: str = Field(
         default="change-me-internal-token",
         description="Shared secret for service-to-service authentication (X-Internal-Token)",

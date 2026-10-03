@@ -17,6 +17,7 @@ Lifecycle:
 Idempotency: Concurrent triggers for the same task while one is IN_PROGRESS return 409.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -61,6 +62,7 @@ from app.services.llm_reviewer import (
     generate_feedback_summary,
     run_llm_review,
 )
+from app.services.interview_client import InterviewClient
 from app.services.roadmap_client import RoadmapClient, TaskStateConflictError
 
 logger = logging.getLogger("evaluator-agent.service")
@@ -83,6 +85,7 @@ class EvaluatorService:
     def __init__(self, llm_provider: BaseLLMProvider) -> None:
         self._llm = llm_provider
         self._roadmap_client = RoadmapClient()
+        self._interview_client = InterviewClient()
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -465,6 +468,30 @@ class EvaluatorService:
                 "Evaluation row is COMPLETED but task may remain EVALUATING.",
                 request.task_id, exc,
             )
+
+        # ── Trigger interview-agent-service session creation (fire-and-forget) ──
+        async def _trigger_interview() -> None:
+            try:
+                eval_ctx = {
+                    "weaknesses": (llm_review.weaknesses if llm_review else []) or [],
+                    "red_flags": (llm_review.red_flags if llm_review else []) or [],
+                    "skills_targeted": list(skills) if skills else [],
+                    "deterministic_checks": [c.model_dump() for c in checks] if checks else [],
+                }
+                await self._interview_client.create_session(
+                    task_id=request.task_id,
+                    user_id=request.user_id,
+                    evaluation_id=evaluation.id,
+                    evaluation_context=eval_ctx,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to trigger interview session for task %s: %s",
+                    request.task_id, exc,
+                )
+
+        asyncio.create_task(_trigger_interview())
+        logger.info("Fired background interview session creation trigger for task %s", request.task_id)
 
     async def _mark_failed(
         self,

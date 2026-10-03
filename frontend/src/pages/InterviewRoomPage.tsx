@@ -20,12 +20,13 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import AppNavbar from '../components/AppNavbar';
 import {
   startSession,
   resumeSession,
   submitAnswer,
+  submitProctoringEvent,
   InterviewApiError,
 } from '../services/interview';
 import type {
@@ -87,23 +88,48 @@ export default function InterviewRoomPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const mode = searchParams.get('mode'); // 'start' | 'resume'
 
+  // Preloaded data from landing page user-gesture start/resume click handler
+  const preloaded = location.state as {
+    preloadedSession?: InterviewSessionResponse;
+    preloadedTurn?: InterviewTurnResponse;
+    preloadedTurns?: InterviewTurnResponse[];
+    autoSpokenTurnId?: string;
+  } | null;
+
   // Session state
-  const [session, setSession] = useState<InterviewSessionResponse | null>(null);
-  const [currentTurn, setCurrentTurn] = useState<InterviewTurnResponse | null>(null);
-  const [turnHistory, setTurnHistory] = useState<InterviewTurnResponse[]>([]);
+  const [session, setSession] = useState<InterviewSessionResponse | null>(
+    () => preloaded?.preloadedSession ?? null
+  );
+  const [currentTurn, setCurrentTurn] = useState<InterviewTurnResponse | null>(
+    () => preloaded?.preloadedTurn ?? null
+  );
+  const [turnHistory, setTurnHistory] = useState<InterviewTurnResponse[]>(
+    () => preloaded?.preloadedTurns ?? (preloaded?.preloadedTurn ? [preloaded.preloadedTurn] : [])
+  );
   const [isCompleted, setIsCompleted] = useState(false);
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [performanceSummary, setPerformanceSummary] = useState<OverallPerformanceSummary | null>(null);
 
   // User interaction state
   const [answerText, setAnswerText] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !preloaded?.preloadedSession);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConflictError, setIsConflictError] = useState(false);
   const [isServiceUnavailable, setIsServiceUnavailable] = useState(false);
+
+  // Proctoring state — violation detection active while interview is in progress
+  const [violationBanner, setViolationBanner] = useState<string | null>(null);
+  const [isTerminated, setIsTerminated] = useState(false);
+  const [violationCount, setViolationCount] = useState<number>(
+    () => preloaded?.preloadedSession?.violation_count ?? 0
+  );
+  const [maxViolations, setMaxViolations] = useState<number>(3);
+  const proctoringActiveRef = useRef<boolean>(false);
+  const lastViolationTimeRef = useRef<Record<string, number>>({});
 
   // Voice state (Web Speech API) — detected on mount with browser capability checks
   const [voiceSupported] = useState(() => {
@@ -116,6 +142,7 @@ export default function InterviewRoomPage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [showProminentReplay, setShowProminentReplay] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
 
@@ -123,6 +150,7 @@ export default function InterviewRoomPage() {
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const baseTextRef = useRef<string>('');
   const lastSpokenTurnIdRef = useRef<string | null>(null);
+  const speakFallbackTimerRef = useRef<number | null>(null);
 
   // Question duration timer
   const [secondsElapsed, setSecondsElapsed] = useState(0);
@@ -185,6 +213,13 @@ export default function InterviewRoomPage() {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     if (isMuted && !force) return;
 
+    if (speakFallbackTimerRef.current) {
+      window.clearTimeout(speakFallbackTimerRef.current);
+      speakFallbackTimerRef.current = null;
+    }
+
+    let didStartSpeaking = false;
+
     // Cancel any in-progress utterance before starting a new one, avoiding overlapping audio
     window.speechSynthesis.cancel();
 
@@ -194,20 +229,51 @@ export default function InterviewRoomPage() {
       utterance.voice = selectedVoiceRef.current;
     }
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      didStartSpeaking = true;
+      if (speakFallbackTimerRef.current) {
+        window.clearTimeout(speakFallbackTimerRef.current);
+        speakFallbackTimerRef.current = null;
+      }
+      setIsSpeaking(true);
+      setShowProminentReplay(false);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = () => {
+      if (speakFallbackTimerRef.current) {
+        window.clearTimeout(speakFallbackTimerRef.current);
+        speakFallbackTimerRef.current = null;
+      }
+      setIsSpeaking(false);
+      // Browser autoplay policy or voice error: reveal prominent replay button
+      setShowProminentReplay(true);
+    };
 
     try {
       window.speechSynthesis.speak(utterance);
+
+      // Fallback: If speak() silently fails to start speaking within ~500ms
+      // (e.g. browser autoplay/user-gesture policy silently blocking or pausing the utterance),
+      // show the "🔊 Replay Question" button more prominently as the primary way to hear Q1.
+      speakFallbackTimerRef.current = window.setTimeout(() => {
+        if (!didStartSpeaking) {
+          setShowProminentReplay(true);
+        }
+      }, 500);
     } catch {
       setIsSpeaking(false);
+      setShowProminentReplay(true);
     }
   }, [isMuted]);
 
   const handleReplayQuestion = () => {
     if (currentTurn?.question_text) {
-      // Replaying forces utterance audio even if session was muted
+      setShowProminentReplay(false);
+      // Replaying forces utterance audio even if session was muted, backed by a direct user gesture
       speakQuestion(currentTurn.question_text, true);
     }
   };
@@ -354,6 +420,10 @@ export default function InterviewRoomPage() {
   // 6. Cleanup voice resources on unmount or navigation away
   useEffect(() => {
     return () => {
+      if (speakFallbackTimerRef.current) {
+        window.clearTimeout(speakFallbackTimerRef.current);
+        speakFallbackTimerRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
@@ -367,9 +437,30 @@ export default function InterviewRoomPage() {
     };
   }, []);
 
-  // Initial Load: Start or Resume session
+  // 7. Initial Load: If preloaded from user gesture on landing page, start question timer and verify audio
+  useEffect(() => {
+    if (preloaded?.preloadedSession && preloaded?.preloadedTurn) {
+      lastSpokenTurnIdRef.current = preloaded.autoSpokenTurnId || preloaded.preloadedTurn.id;
+      startTimer();
+
+      // Check if landing page speech synthesis call is actively speaking; if not within 500ms, show fallback
+      if (voiceSupported && !isMuted) {
+        const timer = window.setTimeout(() => {
+          if (typeof window !== 'undefined' && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
+            setShowProminentReplay(true);
+          }
+        }, 500);
+        return () => window.clearTimeout(timer);
+      }
+    }
+  }, [preloaded, startTimer, voiceSupported, isMuted]);
+
   useEffect(() => {
     if (!taskId) return;
+    if (preloaded?.preloadedSession && preloaded?.preloadedTurn) {
+      // Session already preloaded by landing page user-gesture handler
+      return;
+    }
 
     let mounted = true;
 
@@ -385,6 +476,7 @@ export default function InterviewRoomPage() {
           if (!mounted) return;
 
           setSession(resumeData.session);
+          setViolationCount(resumeData.session.violation_count);
           setTurnHistory(resumeData.turns);
 
           // Find the latest unanswered turn, or the last turn if finished
@@ -392,6 +484,11 @@ export default function InterviewRoomPage() {
           if (unanswered) {
             setCurrentTurn(unanswered);
             startTimer();
+            // Trigger speech synthesis immediately after async session API resolves
+            if (voiceSupported && !isMuted && unanswered.question_text) {
+              lastSpokenTurnIdRef.current = unanswered.id;
+              speakQuestion(unanswered.question_text);
+            }
           } else if (resumeData.turns.length > 0) {
             // All answered — check if completed
             const lastTurn = resumeData.turns[resumeData.turns.length - 1];
@@ -409,9 +506,15 @@ export default function InterviewRoomPage() {
             if (!mounted) return;
 
             setSession(startData.session);
+            setViolationCount(startData.session.violation_count);
             setCurrentTurn(startData.first_question);
             setTurnHistory([startData.first_question]);
             startTimer();
+            // Trigger speech synthesis immediately after async session API resolves
+            if (voiceSupported && !isMuted && startData.first_question?.question_text) {
+              lastSpokenTurnIdRef.current = startData.first_question.id;
+              speakQuestion(startData.first_question.question_text);
+            }
           } catch (startErr: unknown) {
             if (startErr instanceof InterviewApiError && startErr.isConflict()) {
               // Already IN_PROGRESS -> resume automatically
@@ -419,11 +522,16 @@ export default function InterviewRoomPage() {
               if (!mounted) return;
 
               setSession(resumeData.session);
+              setViolationCount(resumeData.session.violation_count);
               setTurnHistory(resumeData.turns);
               const unanswered = resumeData.turns.find((t) => t.answer_text === null);
               if (unanswered) {
                 setCurrentTurn(unanswered);
                 startTimer();
+                if (voiceSupported && !isMuted && unanswered.question_text) {
+                  lastSpokenTurnIdRef.current = unanswered.id;
+                  speakQuestion(unanswered.question_text);
+                }
               } else if (resumeData.turns.length > 0) {
                 setCurrentTurn(resumeData.turns[resumeData.turns.length - 1]);
               }
@@ -457,7 +565,7 @@ export default function InterviewRoomPage() {
     return () => {
       mounted = false;
     };
-  }, [taskId, mode, startTimer]);
+  }, [taskId, mode, startTimer, preloaded, voiceSupported, isMuted, speakQuestion]);
 
   // Answer Submission Handler
   const handleSubmitAnswer = async () => {
@@ -524,6 +632,138 @@ export default function InterviewRoomPage() {
     }
   };
 
+  // ─── Proctoring Enforcement ───────────────────────────────────────────────
+  // Active session status flags
+  const isSessionTerminated = isTerminated || session?.status === 'TERMINATED_VIOLATION';
+  const isSessionCompleted = isCompleted || session?.status === 'COMPLETED';
+
+  // Enable proctoring when an active (non-completed, non-terminated) interview is in the room.
+  // Disable when interview is completed, terminated, or component unmounts.
+  useEffect(() => {
+    proctoringActiveRef.current =
+      !isSessionCompleted && !isSessionTerminated && !loading && Boolean(session);
+  }, [isSessionCompleted, isSessionTerminated, loading, session]);
+
+  const DEBOUNCE_WINDOW_MS = 3000;
+
+  // Shared violation reporter with per-event-type 3-second debounce window
+  const reportViolation = useCallback(
+    async (
+      eventType: 'TAB_BLUR' | 'FULLSCREEN_EXIT' | 'COPY_PASTE_ATTEMPT' | 'DEVTOOLS_DETECTED',
+      banner: string
+    ) => {
+      if (!proctoringActiveRef.current || !taskId) return;
+
+      // 1. Debounce check: ensure no event of the same type fires more than once per 3-second window
+      const now = Date.now();
+      const lastFired = lastViolationTimeRef.current[eventType] ?? 0;
+      if (now - lastFired < DEBOUNCE_WINDOW_MS) {
+        return;
+      }
+      lastViolationTimeRef.current[eventType] = now;
+
+      setViolationBanner(banner);
+
+      try {
+        const result = await submitProctoringEvent(taskId, eventType);
+        // 3. Update violation count and max_violations dynamically from API response
+        setViolationCount(result.violation_count);
+        setMaxViolations(result.max_violations);
+        setSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                violation_count: result.violation_count,
+                status: result.session_status,
+              }
+            : null
+        );
+
+        if (result.terminated || result.session_status === 'TERMINATED_VIOLATION') {
+          setIsTerminated(true);
+          proctoringActiveRef.current = false;
+          // Stop any active voice capture when terminated
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.abort();
+            } catch {
+              /* no-op */
+            }
+          }
+          if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+          }
+        }
+      } catch {
+        // Silently swallow network errors; local violation banner already shown
+      }
+    },
+    [taskId]
+  );
+
+  // 2. Scoped paste handler: ONLY paste into answer textarea is penalized (copy/cut/contextmenu are allowed)
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!proctoringActiveRef.current) return;
+    e.preventDefault();
+    reportViolation(
+      'COPY_PASTE_ATTEMPT',
+      '⚠️ Paste attempt detected. Pasting external text is a proctoring violation.'
+    );
+  };
+
+  // Window and document proctoring listeners (visibilitychange, fullscreenchange, resize)
+  // Automatically removed/cleaned up when session is completed or terminated
+  useEffect(() => {
+    if (!taskId || isSessionCompleted || isSessionTerminated) return;
+
+    // 1. Tab-blur / window minimize: visibilitychange event
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        reportViolation(
+          'TAB_BLUR',
+          '⚠️ Tab switch detected. Switching tabs during the interview is a proctoring violation.'
+        );
+      }
+    };
+
+    // 2. Fullscreen exit
+    const handleFullscreenChange = () => {
+      // When fullscreenElement becomes null the user exited fullscreen
+      if (!document.fullscreenElement) {
+        reportViolation(
+          'FULLSCREEN_EXIT',
+          '⚠️ Fullscreen exit detected. The interview must remain in fullscreen mode.'
+        );
+      }
+    };
+
+    // 3. Devtools detection via rapid window-resize heuristic:
+    //    DevTools panels typically cause the window.outerWidth/Height to differ
+    //    significantly from window.innerWidth/Height when docked.
+    const DEVTOOLS_THRESHOLD = 160;
+    const handleDevtools = () => {
+      const widthDiff = window.outerWidth - window.innerWidth;
+      const heightDiff = window.outerHeight - window.innerHeight;
+      if (widthDiff > DEVTOOLS_THRESHOLD || heightDiff > DEVTOOLS_THRESHOLD) {
+        reportViolation(
+          'DEVTOOLS_DETECTED',
+          '⚠️ Developer tools detected. DevTools are not permitted during the interview.'
+        );
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('resize', handleDevtools);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('resize', handleDevtools);
+    };
+  }, [taskId, isSessionCompleted, isSessionTerminated, reportViolation]);
+  // ─── End Proctoring ───────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-surface-950 text-surface-100 flex flex-col">
       <AppNavbar />
@@ -553,12 +793,20 @@ export default function InterviewRoomPage() {
               </div>
             )}
 
-            {/* Session Violation Count Warning */}
-            {session && session.violation_count > 0 && (
-              <div className="px-2.5 py-1 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 text-xs">
-                ⚠️ Warnings: {session.violation_count}/3
-              </div>
-            )}
+            {/* 4. Persistent Proctoring Badge: always visible, defaults to 0/3, updates on violation */}
+            <div
+              id="proctoring-status-badge"
+              className={`px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5 font-mono border transition-colors ${
+                violationCount > 0
+                  ? 'bg-red-500/10 text-red-300 border-red-500/20'
+                  : 'bg-surface-800 text-surface-300 border-surface-700'
+              }`}
+            >
+              <span>🛡️</span>
+              <span>
+                Proctoring Active · {violationCount}/{maxViolations}
+              </span>
+            </div>
 
             {/* Answer Duration Timer */}
             {!isCompleted && !loading && (
@@ -596,6 +844,46 @@ export default function InterviewRoomPage() {
           </div>
         )}
 
+        {/* Proctoring Violation Banner */}
+        {violationBanner && !isSessionTerminated && (
+          <div className="mb-4 p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-sm flex items-start justify-between gap-3 animate-fadeIn">
+            <div className="flex items-start gap-2">
+              <span className="text-base shrink-0">🚨</span>
+              <div>
+                <span className="font-semibold block text-red-100">Proctoring Violation Recorded</span>
+                <span className="text-xs text-red-300/90">{violationBanner} Repeated violations will automatically terminate the interview.</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setViolationBanner(null)}
+              className="text-red-400 hover:text-red-200 text-xs font-bold px-2 py-0.5 rounded hover:bg-red-500/20 transition-colors shrink-0 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Session Terminated by Violation Overlay */}
+        {isSessionTerminated && (
+          <div className="my-auto p-8 rounded-2xl bg-red-500/10 border border-red-500/30 space-y-5 text-center max-w-lg mx-auto">
+            <div className="text-4xl">🛑</div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold text-red-200">Interview Terminated</h2>
+              <p className="text-sm text-red-300/80 leading-relaxed">
+                Your interview session has been automatically terminated due to repeated proctoring rule violations.
+                Answers submitted prior to termination have been saved.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate(`/interview/${taskId}`)}
+              className="px-6 py-2.5 rounded-xl bg-red-500 hover:bg-red-400 text-white font-semibold text-sm transition-all shadow-lg shadow-red-500/20"
+            >
+              Return to Interview Overview
+            </button>
+          </div>
+        )}
+
         {/* General Error Banner */}
         {!loading && error && !isConflictError && (
           <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm flex items-center justify-between gap-3">
@@ -616,7 +904,7 @@ export default function InterviewRoomPage() {
         )}
 
         {/* Main Interview Stage */}
-        {!loading && !isConflictError && (
+        {!loading && !isConflictError && !isSessionTerminated && (
           <div className="space-y-6 my-auto">
             {/* Voice Unsupported Graceful Fallback Banner */}
             {!isCompleted && !voiceSupported && (
@@ -828,10 +1116,14 @@ export default function InterviewRoomPage() {
                               id="replay-question-btn"
                               onClick={handleReplayQuestion}
                               title="Replay Question Audio"
-                              className="px-2.5 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-200 text-xs font-medium transition-colors flex items-center gap-1 border border-surface-700"
+                              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                                showProminentReplay
+                                  ? 'bg-primary-500 hover:bg-primary-400 text-surface-950 border-primary-400 shadow-md shadow-primary-500/30 animate-pulse font-bold'
+                                  : 'bg-surface-800 hover:bg-surface-700 text-surface-200 border-surface-700'
+                              }`}
                             >
                               <span>🔊</span>
-                              <span className="hidden sm:inline">Replay</span>
+                              <span>{showProminentReplay ? 'Play Audio' : 'Replay'}</span>
                             </button>
                             <button
                               type="button"
@@ -857,6 +1149,30 @@ export default function InterviewRoomPage() {
                         {currentTurn.question_text}
                       </h2>
                     </div>
+
+                    {/* Fallback Prominent Replay Button Banner (Gesture-backed primary way to hear Q1) */}
+                    {showProminentReplay && voiceSupported && !isSpeaking && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-primary-500/10 border border-primary-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+                        <div className="flex items-center gap-2.5 text-xs text-primary-200">
+                          <span className="text-base">🔊</span>
+                          <div>
+                            <span className="font-semibold text-primary-100">Audio playback waiting:</span>{' '}
+                            <span className="text-surface-300">
+                              Browser audio policy requires a user click to play audio. Click replay to hear this question.
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          id="replay-question-prominent-btn"
+                          onClick={handleReplayQuestion}
+                          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-400 text-surface-950 font-bold text-xs transition-all shadow-md shadow-primary-500/25 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+                        >
+                          <span>🔊</span>
+                          <span>Replay Question</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -950,6 +1266,7 @@ export default function InterviewRoomPage() {
                     value={answerText}
                     onChange={(e) => setAnswerText(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     disabled={isSubmitting}
                     rows={6}
                     placeholder="Type or speak your explanation here. Be specific about your architecture, design trade-offs, and how you approached edge cases..."

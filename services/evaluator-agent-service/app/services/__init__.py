@@ -8,6 +8,7 @@ from app.services.github_client import (
     GitHubRateLimitError,
 )
 from app.services.roadmap_client import RoadmapClient
+from app.services.interview_client import InterviewClient
 
 __all__ = [
     "EvaluatorService",
@@ -18,4 +19,5 @@ __all__ = [
     "GitHubPrivateRepoError",
     "GitHubRateLimitError",
     "RoadmapClient",
+    "InterviewClient",
 ]

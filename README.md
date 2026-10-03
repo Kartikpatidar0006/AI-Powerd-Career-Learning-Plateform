@@ -506,3 +506,14 @@ pytest services/evaluator-agent-service/tests
 - 5 GitHub REST API error mapping tests (404, private, 429 rate limit, 500 server error)
 - 7 API integration & defense tests verifying idempotency (409), gateway security tokens, and user isolation
 - Zero response leakage of internal red_flags or python "Traceback" stack traces
+
+---
+
+## 📝 QA Notes: Speech Synthesis & Autoplay Policy Verification
+
+See full test documentation in [`QA_NOTES.md`](file:///d:/AI%20Powered%20Career%20learning%20plateform/QA_NOTES.md).
+
+- **Root Cause Confirmed:** Browser autoplay and user activation policies (e.g. Chrome, Safari) silently block or queue `speechSynthesis.speak()` when fired inside a `useEffect` after client-side navigation and asynchronous network delays (`startSession`).
+- **Fix 1 (Direct Gesture Chain):** In `InterviewLandingPage`, "Start Interview" and "Resume Interview" synchronously prime the speech engine in the click handler and immediately trigger Question 1 audio upon API resolution within the user gesture chain, passing preloaded state to `InterviewRoomPage`.
+- **Fix 2 (500ms Fallback):** In `InterviewRoomPage`, if `speak()` silently fails to begin playing audio within 500ms (or on unprompted reload), `showProminentReplay` activates, highlighting `#replay-question-btn` and rendering a prominent `#replay-question-prominent-btn` banner as the reliable gesture-backed way to hear Question 1.
+

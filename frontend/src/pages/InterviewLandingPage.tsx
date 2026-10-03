@@ -16,7 +16,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import AppNavbar from '../components/AppNavbar';
-import { getSession } from '../services/interview';
+import { getSession, startSession, resumeSession, InterviewApiError } from '../services/interview';
 import type { InterviewSessionResponse } from '../types/interview';
 
 function formatRemainingTime(seconds: number): string {
@@ -35,8 +35,152 @@ export default function InterviewLandingPage() {
 
   const [session, setSession] = useState<InterviewSessionResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionNotFound, setSessionNotFound] = useState(false);
+
+  // Synchronously prime the speech synthesis engine within the active user gesture
+  const primeSpeechSynthesis = () => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        const prime = new SpeechSynthesisUtterance('');
+        prime.volume = 0;
+        window.speechSynthesis.speak(prime);
+        window.speechSynthesis.resume();
+      } catch {
+        // ignore browser permission/silent errors
+      }
+    }
+  };
+
+  // Directly handle starting the interview within user-gesture call chain
+  const handleStartInterview = async () => {
+    if (!taskId || actionLoading) return;
+    try {
+      setActionLoading(true);
+      setError(null);
+
+      // 1. Request fullscreen synchronously inside the direct user-gesture click handler
+      //    (same gesture-chain lesson as TTS priming — must be called before any await)
+      if (document.documentElement.requestFullscreen) {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // Fullscreen denied by browser or user — do NOT proceed
+          setError(
+            'Fullscreen is required to start the interview. Please allow fullscreen and try again.'
+          );
+          setActionLoading(false);
+          return;
+        }
+      }
+
+      // 2. Prime TTS synchronously inside the direct user-gesture click handler
+      primeSpeechSynthesis();
+
+      // 3. Await session start API
+      const startData = await startSession(taskId);
+
+      // 4. Immediately after the async session-start API call resolves, trigger first question speech synthesis
+      if (
+        typeof window !== 'undefined' &&
+        window.speechSynthesis &&
+        startData.first_question?.question_text
+      ) {
+        try {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(startData.first_question.question_text);
+          utterance.lang = 'en-IN';
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          // ignore
+        }
+      }
+
+      // 5. Navigate into the room with preloaded state
+      navigate(`/interview/${taskId}/room?mode=start`, {
+        state: {
+          preloadedSession: startData.session,
+          preloadedTurn: startData.first_question,
+          preloadedTurns: [startData.first_question],
+          autoSpokenTurnId: startData.first_question.id,
+        },
+      });
+    } catch (err: unknown) {
+      if (err instanceof InterviewApiError && err.isConflict()) {
+        // If already in progress, seamlessly fallback to resume
+        await handleResumeInterview();
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Failed to start interview session';
+      setError(msg);
+      setActionLoading(false);
+    }
+  };
+
+  // Directly handle resuming the interview within user-gesture call chain
+  const handleResumeInterview = async () => {
+    if (!taskId || actionLoading) return;
+    try {
+      setActionLoading(true);
+      setError(null);
+
+      // 1. Request fullscreen synchronously inside the direct user-gesture click handler
+      //    (must be before any await to stay within the gesture chain)
+      if (document.documentElement.requestFullscreen) {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // Fullscreen denied by browser or user — do NOT proceed
+          setError(
+            'Fullscreen is required to start the interview. Please allow fullscreen and try again.'
+          );
+          setActionLoading(false);
+          return;
+        }
+      }
+
+      // 2. Prime TTS synchronously inside the direct user-gesture click handler
+      primeSpeechSynthesis();
+
+      // 3. Await session resume API
+      const resumeData = await resumeSession(taskId);
+      const unanswered = resumeData.turns.find((t) => t.answer_text === null);
+      const activeTurn = unanswered || (resumeData.turns.length > 0 ? resumeData.turns[resumeData.turns.length - 1] : null);
+
+      // 4. Immediately after async session-resume API call resolves, trigger question speech synthesis
+      if (
+        activeTurn &&
+        typeof window !== 'undefined' &&
+        window.speechSynthesis &&
+        activeTurn.question_text
+      ) {
+        try {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(activeTurn.question_text);
+          utterance.lang = 'en-IN';
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          // ignore
+        }
+      }
+
+      // 5. Navigate into the room with preloaded state
+      navigate(`/interview/${taskId}/room?mode=resume`, {
+        state: {
+          preloadedSession: resumeData.session,
+          preloadedTurn: activeTurn,
+          preloadedTurns: resumeData.turns,
+          autoSpokenTurnId: activeTurn ? activeTurn.id : null,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to resume interview session';
+      setError(msg);
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!taskId) return;
@@ -242,10 +386,21 @@ export default function InterviewLandingPage() {
                     </span>
                     <button
                       id="start-interview-btn"
-                      onClick={() => navigate(`/interview/${taskId}/room?mode=start`)}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white font-semibold text-sm transition-all shadow-lg shadow-primary-500/25 flex items-center justify-center gap-2"
+                      onClick={handleStartInterview}
+                      disabled={actionLoading}
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all shadow-lg shadow-primary-500/25 flex items-center justify-center gap-2"
                     >
-                      <span>🚀</span> Start Interview
+                      {actionLoading ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                          <span>Preparing Interview...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>🚀</span>
+                          <span>Start Interview</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -272,10 +427,21 @@ export default function InterviewLandingPage() {
                   <div className="flex justify-end pt-2">
                     <button
                       id="resume-interview-btn"
-                      onClick={() => navigate(`/interview/${taskId}/room?mode=resume`)}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-semibold text-sm transition-all shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2"
+                      onClick={handleResumeInterview}
+                      disabled={actionLoading}
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2"
                     >
-                      <span>▶️</span> Resume Interview
+                      {actionLoading ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                          <span>Resuming Interview...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>▶️</span>
+                          <span>Resume Interview</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
