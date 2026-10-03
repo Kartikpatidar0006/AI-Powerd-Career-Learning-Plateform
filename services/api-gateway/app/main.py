@@ -496,3 +496,38 @@ async def proxy_evaluations(request: Request, path: str) -> Response:
         timeout=settings.DEFAULT_TIMEOUT,
     )
 
+
+# ──────────────────────────────────────────────
+# Interview Service Proxy (Authenticated)
+# ──────────────────────────────────────────────
+@app.api_route(
+    "/interview/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Interview Proxy"],
+    summary="Authenticated Proxy to Interview Agent Service (Agent 4)",
+)
+async def proxy_interview(request: Request, path: str) -> Response:
+    """
+    Authenticated reverse proxy for interview-agent-service (/interview/* routes).
+
+    Enforces JWT verification at the gateway layer BEFORE forwarding.
+    Extracts the user_id from the verified token and forwards it via
+    the trusted internal header 'X-User-Id'. Strips any spoofed client
+    'X-User-Id' and 'X-Gateway-Token' headers before dispatching downstream.
+    Injects verified 'X-Gateway-Token' for defense in depth.
+    Applies LLM extended timeout on /start and /answer endpoints.
+    """
+    is_llm_route = (
+        request.method == "POST"
+        and (path.rstrip("/").endswith("/start") or path.rstrip("/").endswith("/answer"))
+    )
+    timeout = settings.LLM_ROUTE_TIMEOUT if is_llm_route else settings.DEFAULT_TIMEOUT
+
+    return await proxy_authenticated(
+        request=request,
+        target_url=f"{settings.INTERVIEW_SERVICE_URL}/interview/{path}",
+        service_name="Interview agent service",
+        timeout=timeout,
+    )
+
+

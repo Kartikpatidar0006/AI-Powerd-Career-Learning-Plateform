@@ -17,11 +17,13 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.llm import get_llm_provider
 from app.db.session import get_db
+from app.models.evaluation import Evaluation
 from app.schemas.evaluation import (
     CheckResultResponse,
     EvaluationResponse,
@@ -128,6 +130,87 @@ async def trigger_evaluation(
         "evaluation_id": str(evaluation.id),
         "task_id": str(body.task_id),
         "status": "IN_PROGRESS",
+    }
+
+
+@internal_router.get(
+    "/evaluations/by-task/{task_id}",
+    status_code=status.HTTP_200_OK,
+    summary="[Internal] Get full evaluation findings for a task",
+    description=(
+        "Returns the latest evaluation record for a task_id, "
+        "including weaknesses, red_flags, skills_targeted, and deterministic_checks. "
+        "Protected by X-Internal-Token."
+    ),
+)
+async def get_internal_evaluation_by_task(
+    task_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    service: Annotated[EvaluatorService, Depends(get_evaluator_service)],
+    _: Annotated[None, Depends(verify_internal_token)],
+) -> dict:
+    """Return full internal evaluation findings by task_id."""
+    evaluation = await service.get_latest_evaluation_by_task(db=db, task_id=task_id)
+    if evaluation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No evaluation found for task {task_id}",
+        )
+
+    llm = evaluation.llm_review or {}
+    return {
+        "id": str(evaluation.id),
+        "task_id": str(evaluation.task_id),
+        "user_id": str(evaluation.user_id),
+        "status": evaluation.status,
+        "final_score": evaluation.final_score,
+        "passed": evaluation.passed,
+        "deterministic_score": evaluation.deterministic_score,
+        "deterministic_checks": evaluation.deterministic_checks or [],
+        "llm_weaknesses": llm.get("weaknesses", []),
+        "red_flags": llm.get("red_flags", []),
+        "skills_targeted": llm.get("skills_targeted", []),
+        "strengths": llm.get("strengths", []),
+        "suggestions": llm.get("suggestions", []),
+    }
+
+
+@internal_router.get(
+    "/evaluations/{evaluation_id}",
+    status_code=status.HTTP_200_OK,
+    summary="[Internal] Get full evaluation findings by evaluation_id",
+    description="Protected by X-Internal-Token.",
+)
+async def get_internal_evaluation_by_id(
+    evaluation_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[None, Depends(verify_internal_token)],
+) -> dict:
+    """Return full internal evaluation findings by evaluation_id."""
+    stmt = select(Evaluation).where(Evaluation.id == evaluation_id)
+    result = await db.execute(stmt)
+    evaluation = result.scalars().first()
+    if evaluation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No evaluation found for id {evaluation_id}",
+        )
+
+    llm = evaluation.llm_review or {}
+    return {
+        "id": str(evaluation.id),
+        "task_id": str(evaluation.task_id),
+        "user_id": str(evaluation.user_id),
+        "status": evaluation.status,
+        "final_score": evaluation.final_score,
+        "passed": evaluation.passed,
+        "deterministic_score": evaluation.deterministic_score,
+        "deterministic_checks": evaluation.deterministic_checks or [],
+        "llm_weaknesses": llm.get("weaknesses", []),
+        "red_flags": llm.get("red_flags", []),
+        "skills_targeted": llm.get("skills_targeted", []),
+        "strengths": llm.get("strengths", []),
+        "suggestions": llm.get("suggestions", []),
     }
 
 

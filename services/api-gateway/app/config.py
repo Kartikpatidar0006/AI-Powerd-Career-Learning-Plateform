@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         default="http://evaluator-agent-service:8004",
         description="Base URL for the internal evaluator agent service (Agent 3)",
     )
+    INTERVIEW_SERVICE_URL: str = Field(
+        default="http://interview-agent-service:8005",
+        description="Base URL for the internal interview agent service (Agent 4)",
+    )
 
     # JWT Verification
     JWT_SECRET_KEY: str = Field(

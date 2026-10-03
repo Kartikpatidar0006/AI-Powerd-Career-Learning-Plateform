@@ -194,6 +194,60 @@ class TestEvaluatorAPIEndpoints(unittest.TestCase):
         finally:
             app.dependency_overrides.clear()
 
+    # ── Internal GET By Task Endpoints ───────────────────────────────────
+    def test_internal_get_evaluation_by_task_requires_internal_token(self) -> None:
+        """GET /internal/evaluations/by-task/{task_id} without internal token returns 403."""
+        resp = self.client.get(f"/internal/evaluations/by-task/{self.task_id}")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertNotIn("Traceback", resp.text)
+
+    def test_internal_get_evaluation_by_task_returns_full_findings(self) -> None:
+        """GET /internal/evaluations/by-task/{task_id} returns weaknesses, red_flags, skills_targeted, deterministic_checks."""
+        mock_eval = MagicMock(spec=Evaluation)
+        mock_eval.id = uuid.uuid4()
+        mock_eval.task_id = uuid.UUID(self.task_id)
+        mock_eval.user_id = uuid.UUID(self.user_id)
+        mock_eval.status = EvaluationStatus.COMPLETED.value
+        mock_eval.final_score = 78.5
+        mock_eval.passed = True
+        mock_eval.deterministic_score = 75.0
+        mock_eval.deterministic_checks = [
+            {"check_name": "pytest_suite", "passed": True, "score_contribution": 30.0, "weight_pct": 30.0, "detail": "All tests passed"}
+        ]
+        mock_eval.llm_review = {
+            "strengths": ["Clean separation of concerns"],
+            "weaknesses": ["Missing connection pool cleanup in shutdown event"],
+            "red_flags": ["Potential race condition during pool init"],
+            "skills_targeted": ["PostgreSQL", "FastAPI", "AsyncIO"],
+            "suggestions": ["Add lifespan context manager"],
+        }
+
+        mock_session = AsyncMock()
+
+        async def override_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with patch(
+                "app.services.evaluator_service.EvaluatorService.get_latest_evaluation_by_task",
+                AsyncMock(return_value=mock_eval),
+            ):
+                resp = self.client.get(
+                    f"/internal/evaluations/by-task/{self.task_id}",
+                    headers={"X-Internal-Token": self.internal_token},
+                )
+                self.assertEqual(resp.status_code, status.HTTP_200_OK)
+                data = resp.json()
+                self.assertEqual(data["task_id"], self.task_id)
+                self.assertIn("Missing connection pool cleanup in shutdown event", data["llm_weaknesses"])
+                self.assertIn("Potential race condition during pool init", data["red_flags"])
+                self.assertIn("PostgreSQL", data["skills_targeted"])
+                self.assertEqual(len(data["deterministic_checks"]), 1)
+                self.assertNotIn("Traceback", resp.text)
+        finally:
+            app.dependency_overrides.clear()
+
 
 if __name__ == "__main__":
     unittest.main()

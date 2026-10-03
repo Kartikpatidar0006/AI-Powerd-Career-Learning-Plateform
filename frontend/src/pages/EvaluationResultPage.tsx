@@ -16,6 +16,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AppNavbar from '../components/AppNavbar';
 import { getEvaluationForTask } from '../services/evaluator';
 import type { EvaluationResult, CheckResultResponse } from '../services/evaluator';
+import { getSession } from '../services/interview';
+import type { InterviewSessionResponse } from '../types/interview';
 
 function ScoreRing({ score, passed }: { score: number; passed: boolean }) {
   const radius = 42;
@@ -54,6 +56,7 @@ export default function EvaluationResultPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [interviewSession, setInterviewSession] = useState<InterviewSessionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +68,14 @@ export default function EvaluationResultPage() {
         setError(null);
         const data = await getEvaluationForTask(taskId);
         setEvaluation(data);
+
+        // Check if an interview session was created for this evaluated task
+        try {
+          const sessionData = await getSession(taskId);
+          setInterviewSession(sessionData);
+        } catch {
+          setInterviewSession(null);
+        }
       } catch (err: unknown) {
         const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         setError(detail || 'Failed to load evaluation result.');
@@ -285,6 +296,23 @@ export default function EvaluationResultPage() {
               >
                 Back to Daily Task
               </button>
+
+              {/* AI Mock Interview CTA if session is available or in progress */}
+              {interviewSession && (interviewSession.status === 'AVAILABLE' || interviewSession.status === 'IN_PROGRESS') && (
+                <button
+                  id="take-interview-btn"
+                  onClick={() => navigate(`/interview/${taskId}`)}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-semibold text-sm hover:from-purple-400 hover:to-indigo-500 transition-all shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2"
+                >
+                  <span>🤖</span>
+                  <span>
+                    {interviewSession.status === 'IN_PROGRESS'
+                      ? 'Resume Mock Interview →'
+                      : 'Take AI Mock Interview →'}
+                  </span>
+                </button>
+              )}
+
               {evaluation.passed ? (
                 <button
                   onClick={() => navigate('/tasks')}

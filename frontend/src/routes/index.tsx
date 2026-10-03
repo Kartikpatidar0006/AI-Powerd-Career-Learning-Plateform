@@ -19,6 +19,8 @@ import RoadmapPage from '../pages/RoadmapPage';
 import DailyTaskPage from '../pages/DailyTaskPage';
 import TaskHistoryPage from '../pages/TaskHistoryPage';
 import EvaluationResultPage from '../pages/EvaluationResultPage';
+import InterviewLandingPage from '../pages/InterviewLandingPage';
+import InterviewRoomPage from '../pages/InterviewRoomPage';
 import ProtectedRoute from '../components/ProtectedRoute';
 
 const router = createBrowserRouter([
@@ -53,6 +55,14 @@ const router = createBrowserRouter([
       {
         path: '/evaluations/:taskId',
         element: <EvaluationResultPage />,
+      },
+      {
+        path: '/interview/:taskId',
+        element: <InterviewLandingPage />,
+      },
+      {
+        path: '/interview/:taskId/room',
+        element: <InterviewRoomPage />,
       },
       {
         path: '/history',

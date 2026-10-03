@@ -232,6 +232,22 @@ class EvaluatorService:
         )
         return result.scalars().first()
 
+    async def get_latest_evaluation_by_task(
+        self,
+        db: AsyncSession,
+        task_id: uuid.UUID,
+    ) -> Evaluation | None:
+        """
+        Get the latest evaluation for a task_id (internal service-to-service).
+        """
+        result = await db.execute(
+            select(Evaluation)
+            .where(Evaluation.task_id == task_id)
+            .order_by(Evaluation.created_at.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
     # ── Private Pipeline ─────────────────────────────────────────────────
 
     async def _execute_evaluation(
